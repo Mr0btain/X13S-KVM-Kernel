@@ -19,12 +19,16 @@ if [ ! -e .config ]; then
                  --undefine DEBUG_INFO_DWARF_TOOLCHAIN_DEFAULT \
                  --undefine DEBUG_INFO_DWARF4 --undefine DEBUG_INFO_DWARF5 \
                  --enable DEBUG_INFO_NONE \
+                 --disable BUILTIN_MODULE_RANGES \
                  --module QCOM_Q6V5_PAS
   make olddefconfig
 fi
 grep -E "^CONFIG_(LOCALVERSION|KVM|QCOM_Q6V5_PAS|DEBUG_INFO_NONE)=" .config
 start=$(date +%s)
-make "$JOBS" KDEB_PKGVERSION="$(make -s kernelversion)-1el2" bindeb-pkg 2>&1 | tee "$TOP/out/kernel-build.log" | grep -E "error|warning: .*remoteproc|dpkg-deb" || true
+rc=0
+make "$JOBS" LOCALVERSION= KDEB_PKGVERSION="$(make -s kernelversion)-1el2" bindeb-pkg > "$TOP/out/kernel-build.log" 2>&1 || rc=$?
+grep -E "error:|\*\*\*|dpkg-deb: building" "$TOP/out/kernel-build.log" | grep -v "error-inject" | tail -20 || true
 echo "build took $(( ($(date +%s) - start) / 60 )) min"
 mv -f ../linux-*el2*.deb ../linux-*el2*.buildinfo ../linux-*el2*.changes "$TOP/out/" 2>/dev/null || true
 ls -l "$TOP"/out/*.deb
+exit $rc

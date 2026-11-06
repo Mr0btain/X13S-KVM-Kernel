@@ -1,0 +1,47 @@
+From f85709b0a7ddcec75ebdfc69c87682e0f81e918e Mon Sep 17 00:00:00 2001
+From: Jens Glathe <jens.glathe@oldschoolsolutions.biz>
+Date: Sun, 31 May 2026 21:54:01 +0200
+Subject: [PATCH] kbuild: dtbinst: mark __dtbs_install as .NOTPARALLEL to avoid
+ install -D race
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+The dtbs_install target invokes multiple parallel 'install -D -m 0644'
+commands (one per .dtb) that all write into the same vendor
+subdirectories (qcom/, allwinner/, actions/, etc.).
+
+GNU coreutils 'install -D' performs a non-atomic "check + mkdir"
+sequence. When many jobs race to create the same parent directory,
+some of them fail with:
+
+    install: cannot create directory '.../device-tree/actions'
+
+This latent race has existed for years but becomes much more visible
+on distributions that default to high parallelism (Ubuntu 24.04/26.04
+etc.) and ship large numbers of vendor device trees.
+
+Add .NOTPARALLEL for the __dtbs_install target. This forces only the
+install rules to run serially while leaving the rest of the kernel
+build fully parallel. The performance impact is negligible — DTB
+installation is tiny compared to compilation.
+
+Signed-off-by: Jens Glathe <jens.glathe@oldschoolsolutions.biz>
+---
+ scripts/Makefile.dtbinst | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/scripts/Makefile.dtbinst b/scripts/Makefile.dtbinst
+index 9d92041..3de271b 100644
+--- a/scripts/Makefile.dtbinst
++++ b/scripts/Makefile.dtbinst
+@@ -40,4 +40,6 @@ endif # CONFIG_ARCH_WANT_FLAT_DTB_INSTALL
+ __dtbs_install: $(addprefix $(dst)/, $(dtbs))
+ 	@:
+ 
++.NOTPARALLEL: __dtbs_install
++
+ .PHONY: $(PHONY)
+-- 
+2.53.0
+

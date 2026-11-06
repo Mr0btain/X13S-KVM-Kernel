@@ -7,7 +7,7 @@
 | 0 Repo + baseline | repo done; baseline todo |
 | 1 qebspil smoke test (stock kernel) | qebspil built (`out/qebspil/`), `scripts/install-esp.sh` ready; needs sudo + reboot |
 | 2 Kernel source + takeover patches | done: **base switched to mainline v7.3.1**; all 11 patches apply cleanly (`scripts/apply-patches.sh`) |
-| 3 Build `-el2` kernel | compiling; `bindeb-pkg` needs `debhelper libdw-dev libelf-dev` (sudo) |
+| 3 Build `-el2` kernel | done: `out/linux-image-7.3.1-el2_7.3.1-1el2_arm64.deb` (+ headers); ~65 min full build |
 | 4 Boot integration | `scripts/install-kernel.sh` + `scripts/el2-grubcfg.sh` written, not yet run |
 | 5 Test checklist | todo |
 | 6 Leftovers (venus, EFI vars) | optional |
@@ -210,6 +210,17 @@ chain (photo of the shell output + dmesg in `notes/boot-log.md`).
    Packaging needs `sudo apt install debhelper libdw-dev libelf-dev`.
    Expect about 1.5–3 h with ccache off. Rebuilds use `make -j6` + reinstall.
 3. Build dtbs from the same tree (`make dtbs`) so the -el2 dtb matches the kernel.
+
+Build gotchas (2026-11-06):
+- `CONFIG_BUILTIN_MODULE_RANGES` needs `gawk` (not installed): disabled.
+- Release came out `7.3.1-el2+` (commits on top of the tag): build with
+  `LOCALVERSION=` so it's `7.3.1-el2`.
+- `bindeb-pkg` failed in `dtbs_install` (parallel `install -D` race):
+  patch 0012 (`.NOTPARALLEL: __dtbs_install`, from the same jglathe branch).
+- `out/linux-libc-dev_*.deb` is a by-product. **Don't install it**
+  (`install-kernel.sh` only takes image + headers).
+- `CONFIG_EFI_ZBOOT=y`: vmlinuz is a compressed EFI PE, booted by GRUB; it
+  keeps the dtb GRUB installs (no stubble swap like Ubuntu's image).
 
 **Done when:** the debs exist and `dpkg -c` shows the Image, modules and dtbs.
 
