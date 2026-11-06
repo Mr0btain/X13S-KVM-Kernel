@@ -249,7 +249,7 @@ Build gotchas (2026-11-06):
 - [ ] USB-C: both ports (2nd port's PHY timed out on boot #1, see boot-log), both orientations, USB3 speed; DP alt mode to a monitor
 - [x] Audio (user-tested): speakers, headphone jack, internal mics (`alsaucm`, pipewire)
 - [x] Wi-Fi + Bluetooth
-- [ ] **Suspend/resume (s2idle) ×3: currently hard-resets at `PM: suspend entry`, bisecting**: DSPs still alive afterwards, battery still updating
+- [x] Suspend/resume (s2idle): works **without cluster idle** (dtb `domain-idle-states` removed from the cluster PD; cluster collapse resets at EL2). DSPs survive. [ ] repeat x3 via normal `systemctl suspend` with the modem present; [ ] measure overnight drain: DSPs still alive afterwards, battery still updating
 - [ ] Lid close, brightness, keyboard backlight, thermals (`sensors`), fan
 - [ ] Uptime soak: a day of normal use + an emulator session, no DSP crashes
 - [ ] Same kernel at EL1 (normal entry, if installed there): no regressions
@@ -270,6 +270,14 @@ Build gotchas (2026-11-06):
 - Send results upstream / to qebspil issue tracker (first SC8280XP report).
 
 ## Risks / open questions
+
+- **Cluster power collapse is off at EL2** (it resets on s2idle). Costs some
+  idle/suspend power. A real fix would need the warm-boot path to return
+  to Linux without the Qualcomm hypervisor; worth asking upstream/slbounce.
+- WWAN modem (T99W175/X55, PCIe 0004) drops its link across suspend
+  (pciehp unplug/replug, `pci_disable_device` WARNING, `mhi_pci_suspend` -16
+  if suspended again too soon).
+- 2nd USB-C PHY times out on some boots (seen at EL1 too).
 
 - ~~Ordering of qebspil vs slbounce~~: resolved, see Phase 1.3.
 - The patches target 7.3-rc + X1E, so backporting to 7.0 may drag in

@@ -4,7 +4,8 @@
 # /etc/kernel/postinst.d/zz-el2-grubcfg by scripts/install-kernel.sh.
 #
 # Entry 1: newest *-el2 kernel (patched, DSP attach) + X13s -el2 dtb with
-#          dts/x13s-el2-dsp.dtso applied (qcom,broken-reset on the DSPs).
+#          dts/x13s-el2-dsp.dtso applied (qcom,broken-reset on the DSPs)
+#          and the cluster idle state removed (suspend at EL2).
 # Entry 2: newest stock -generic kernel at EL2 (old behaviour: KVM, no DSPs).
 set -eu
 
@@ -45,10 +46,11 @@ if [ -n "$el2ver" ]; then
 		echo "el2-grubcfg: missing $DTBO; DSPs won't attach" >&2
 		cp "$(dtb_for "$el2ver")" "$KDIR/$el2ver.dtb"
 	fi
-	# Suspend test (notes/boot-log.md): same dtb without the cluster power-
-	# collapse state (cluster-sleep-0, PSCI 0x4100c344); s2idle resets at EL2.
-	cp "$KDIR/$el2ver.dtb" "$KDIR/$el2ver-nocluster.dtb"
-	fdtput -d "$KDIR/$el2ver-nocluster.dtb" /psci/power-domain-cpu-cluster0 domain-idle-states
+	# No cluster power collapse (cluster-sleep-0, PSCI 0x4100c344): at EL2 the
+	# s2idle entry into it hard-resets the machine (notes/boot-log.md).
+	# Per-core sleep (cpu-sleep-0-0) stays.
+	fdtput -d "$KDIR/$el2ver.dtb" /psci/power-domain-cpu-cluster0 domain-idle-states
+	rm -f "$KDIR/$el2ver-nocluster.dtb"
 fi
 
 # Stock Ubuntu vmlinuz is a stubble (systemd-stub) PE that swaps in its own
@@ -77,11 +79,6 @@ menuentry 'Linux $el2ver (EL2 / KVM + DSPs)' {
 	linux	/boot/vmlinuz-$el2ver root=UUID=$uuid ro $args
 	initrd	/boot/initrd.img-$el2ver
 	devicetree	/boot/el2/$el2ver.dtb
-}
-menuentry 'Linux $el2ver (EL2 / KVM + DSPs, no cluster idle: suspend test)' {
-	linux	/boot/vmlinuz-$el2ver root=UUID=$uuid ro $args
-	initrd	/boot/initrd.img-$el2ver
-	devicetree	/boot/el2/$el2ver-nocluster.dtb
 }
 EOF
 	fi
