@@ -6,9 +6,9 @@
 |---|---|
 | 0 Repo + baseline | repo done; baseline todo |
 | 1 qebspil smoke test (stock kernel) | qebspil built (`out/qebspil/`), `scripts/install-esp.sh` ready; needs sudo + reboot |
-| 2 Kernel source + takeover patches | 11 patches exported to `patches/linux/`; DT overlay `dts/x13s-el2-dsp.dtso`; backport todo |
-| 3 Build `-el2` kernel | todo |
-| 4 Boot integration | todo |
+| 2 Kernel source + takeover patches | done: **base switched to mainline v7.3.1**; all 11 patches apply cleanly (`scripts/apply-patches.sh`) |
+| 3 Build `-el2` kernel | compiling; `bindeb-pkg` needs `debhelper libdw-dev libelf-dev` (sudo) |
+| 4 Boot integration | `scripts/install-kernel.sh` + `scripts/el2-grubcfg.sh` written, not yet run |
 | 5 Test checklist | todo |
 | 6 Leftovers (venus, EFI vars) | optional |
 
@@ -158,6 +158,22 @@ chain (photo of the shell output + dmesg in `notes/boot-log.md`).
 
 ## Phase 2: Kernel source + takeover patches
 
+> **2026-11-06 decision: base = mainline stable v7.3.1, not Ubuntu 7.0.** The
+> patches sit on the new generic PAS layer (`linux/firmware/qcom/qcom_pas.h`,
+> `qcom_pas_is_available()`, 7.2/7.3 era); in Ubuntu 7.0 `qcom_q6v5_pas.c` is
+> ~500 lines different, so a backport would mean porting that refactor too.
+> On v7.3.1 all 11 apply with no changes. Config = Ubuntu's `/boot/config-*`
+> + olddefconfig (`scripts/build-kernel.sh`). `src/linux` (Ubuntu 7.0) is
+> kept only for reference. Steps 1–3 below describe the original 7.0 plan.
+>
+> Probe logic after the patches (`qcom_q6v5_pas.c`): at EL2 on a platform not
+> in `el2_pas_capable_compats` (X13s isn't), `use_pas=0`; with
+> `qcom,broken-reset` it reads the SMP2P state and registers the rproc as
+> `RPROC_DETACHED` (attach-only ops); without it the probe **defers forever**.
+> At EL1 the normal PAS path is used, so one kernel serves both entries.
+> Compile check: only `-Wenum-conversion` warnings in imx/xlnx rproc
+> (bool -> enum, same values; irrelevant here).
+
 1. Source: Ubuntu's tree for the running kernel, shallow:
    `git clone --depth 1 -b Ubuntu-7.0.0-43.43 https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/resolute src/linux`.
    Same base as the running kernel, so Ubuntu config, firmware paths and
@@ -185,12 +201,13 @@ chain (photo of the shell output + dmesg in `notes/boot-log.md`).
 
 ## Phase 3: Build the `-el2` kernel
 
-1. Config = `/boot/config-7.0.0-43-generic`, `LOCALVERSION=-el2`, then
+1. Config = `/boot/config-$(uname -r)`, `LOCALVERSION=-el2`, then
    `make olddefconfig`. Turn off `DEBUG_INFO_BTF` only if `pahole` causes
    trouble. Turn off module signing / `SYSTEM_TRUSTED_KEYS`
    (Secure Boot is already off).
 2. `make -j6 bindeb-pkg` (14 GB RAM; watch for OOM, add swap if needed)
-   -> `out/linux-image-7.0.x-el2_*.deb`, `linux-headers-*`.
+   -> `out/linux-image-7.3.1-el2_*.deb`, `linux-headers-*`.
+   Packaging needs `sudo apt install debhelper libdw-dev libelf-dev`.
    Expect about 1.5–3 h with ccache off. Rebuilds use `make -j6` + reinstall.
 3. Build dtbs from the same tree (`make dtbs`) so the -el2 dtb matches the kernel.
 
@@ -203,7 +220,7 @@ chain (photo of the shell output + dmesg in `notes/boot-log.md`).
    `7.0.0-43-generic`, so set `GRUB_FLAVOUR_ORDER=generic` in
    `/etc/default/grub.d/` (or `GRUB_DEFAULT` to the stock entry) and check
    `update-grub` output.
-3. Extend `../AndroidEmulator/scripts/el2-grubcfg.sh` (or move a copy here):
+3. `scripts/el2-grubcfg.sh` (replaces AndroidEmulator's hook via `scripts/install-kernel.sh`):
    prefer the newest `*-el2` kernel, fall back to `-generic`. Our kernel is a
    plain Image, not a stubble PE, so no `.linux` extraction needed (keep it
    for the fallback). Use the dtb from Phase 2.5. Also add a second menu
