@@ -4,12 +4,12 @@
 
 | Phase | State |
 |---|---|
-| 0 Repo + baseline | repo done; baseline todo |
-| 1 qebspil smoke test (stock kernel) | qebspil built (`out/qebspil/`), `scripts/install-esp.sh` ready; needs sudo + reboot |
+| 0 Repo + baseline | done (baseline = AndroidEmulator EL2 boot logs) |
+| 1 qebspil smoke test (stock kernel) | skipped: went straight to Phase 4 |
 | 2 Kernel source + takeover patches | done: **base switched to mainline v7.3.1**; all 11 patches apply cleanly (`scripts/apply-patches.sh`) |
 | 3 Build `-el2` kernel | done: `out/linux-image-7.3.1-el2_7.3.1-1el2_arm64.deb` (+ headers); ~65 min full build |
-| 4 Boot integration | `scripts/install-kernel.sh` + `scripts/el2-grubcfg.sh` written, not yet run |
-| 5 Test checklist | todo |
+| 4 Boot integration | **done 2026-11-06**: EL2 entry boots 7.3.1-el2, DSPs attached |
+| 5 Test checklist | in progress: see `notes/boot-log.md` |
 | 6 Leftovers (venus, EFI vars) | optional |
 
 Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
@@ -243,12 +243,12 @@ Build gotchas (2026-11-06):
 
 ## Phase 5: Test checklist (EL2 boot, record in notes/boot-log.md)
 
-- [ ] `CPU: All CPU(s) started at EL2`, `/dev/kvm`, AVD boots with `-accel on`
-- [ ] `remoteproc*: attached` / state `attached` or `running` for adsp, cdsp, slpi
-- [ ] Battery % + charging state (`upower -d`, GNOME indicator); AC plug/unplug events
-- [ ] USB-C: both ports, both orientations, USB3 speed; DP alt mode to a monitor
+- [x] `CPU: All CPU(s) started at EL2`, `/dev/kvm` (AVD `-accel on` still to run)
+- [x] `remoteproc*: attached` / state `attached` or `running` for adsp, cdsp, slpi
+- [x] Battery % (discharging) / [ ] charging state (`upower -d`, GNOME indicator); AC plug/unplug events
+- [ ] USB-C: both ports (2nd port's PHY timed out on boot #1, see boot-log), both orientations, USB3 speed; DP alt mode to a monitor
 - [ ] Audio: speakers, headphone jack, internal mics (`alsaucm`, pipewire)
-- [ ] Wi-Fi + Bluetooth
+- [x] Wi-Fi + Bluetooth
 - [ ] Suspend/resume (s2idle) ×3: DSPs still alive afterwards, battery still updating
 - [ ] Lid close, brightness, keyboard backlight, thermals (`sensors`), fan
 - [ ] Uptime soak: a day of normal use + an emulator session, no DSP crashes
