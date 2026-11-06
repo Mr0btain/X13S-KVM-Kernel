@@ -9,7 +9,7 @@
 | 2 Kernel source + takeover patches | done: **base switched to mainline v7.3.1**; all 11 patches apply cleanly (`scripts/apply-patches.sh`) |
 | 3 Build `-el2` kernel | done: `out/linux-image-7.3.1-el2_7.3.1-1el2_arm64.deb` (+ headers); ~65 min full build |
 | 4 Boot integration | **done 2026-11-06**: EL2 entry boots 7.3.1-el2, DSPs attached |
-| 5 Test checklist | in progress: see `notes/boot-log.md` |
+| 5 Test checklist | **daily-usable at EL2**: KVM, DSPs, battery/charging, audio, Wi-Fi/BT, suspend. Open: 2nd USB-C PHY (intermittent), suspend drain. See `notes/boot-log.md` |
 | 6 Leftovers (venus, EFI vars) | optional |
 
 Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
@@ -249,7 +249,7 @@ Build gotchas (2026-11-06):
 - [ ] USB-C: both ports (2nd port's PHY timed out on boot #1, see boot-log), both orientations, USB3 speed; DP alt mode to a monitor
 - [x] Audio (user-tested): speakers, headphone jack, internal mics (`alsaucm`, pipewire)
 - [x] Wi-Fi + Bluetooth
-- [x] Suspend/resume (s2idle): works **without cluster idle** (dtb `domain-idle-states` removed from the cluster PD; cluster collapse resets at EL2). DSPs survive. [ ] repeat x3 via normal `systemctl suspend` with the modem present; [ ] measure overnight drain: DSPs still alive afterwards, battery still updating
+- [x] Suspend/resume (s2idle): works **without cluster idle** (dtb `domain-idle-states` removed from the cluster PD; cluster collapse resets at EL2). DSPs survive. [x] normal desktop suspend with the modem present (modem returns a few s after resume); [ ] measure overnight drain: DSPs still alive afterwards, battery still updating
 - [ ] Lid close, brightness, keyboard backlight, thermals (`sensors`), fan
 - [ ] Uptime soak: a day of normal use + an emulator session, no DSP crashes
 - [ ] Same kernel at EL1 (normal entry, if installed there): no regressions

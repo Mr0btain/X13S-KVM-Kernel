@@ -70,3 +70,8 @@ than EL1 suspend; measure later).
 
 Second USB-C PHY timeout (`8903000.phy`, dwc3 `a800000.usb` -110): 2 of 4
 boots of 7.3.1-el2 (also once on stock 7.0 at EL1). Intermittent, known issue.
+
+### Normal suspend (user test, 2026-11-06)
+Suspend from the desktop with the modem present: works; the modem comes back a
+few seconds after resume (pciehp re-enumeration). No modem workaround needed
+for now.
