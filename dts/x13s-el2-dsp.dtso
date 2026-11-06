@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: BSD-3-Clause
+/*
+ * X13s at EL2 (slbounce): the DSPs are started from UEFI by qebspil and
+ * Linux attaches to them. qcom,broken-reset makes qebspil start them and
+ * makes the patched qcom_q6v5_pas take the attach-only path
+ * (patches/linux/0007, 0008, 0010).
+ */
+/dts-v1/;
+/plugin/;
+
+&{/soc@0/remoteproc@2400000} {	/* slpi */
+	qcom,broken-reset;
+};
+
+&{/soc@0/remoteproc@3000000} {	/* adsp */
+	qcom,broken-reset;
+};
+
+&{/soc@0/remoteproc@1b300000} {	/* cdsp (nsp0) */
+	qcom,broken-reset;
+};

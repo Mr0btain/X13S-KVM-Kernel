@@ -4,9 +4,9 @@
 
 | Phase | State |
 |---|---|
-| 0 Repo + baseline | todo |
-| 1 qebspil smoke test (stock kernel) | todo |
-| 2 Kernel source + takeover patches | todo |
+| 0 Repo + baseline | repo done; baseline todo |
+| 1 qebspil smoke test (stock kernel) | qebspil built (`out/qebspil/`), `scripts/install-esp.sh` ready; needs sudo + reboot |
+| 2 Kernel source + takeover patches | 11 patches exported to `patches/linux/`; DT overlay `dts/x13s-el2-dsp.dtso`; backport todo |
 | 3 Build `-el2` kernel | todo |
 | 4 Boot integration | todo |
 | 5 Test checklist | todo |
@@ -139,10 +139,13 @@ at all, before we spend hours on kernel work.
 2. Copy the DSP firmware, decompressed, to the ESP:
    `\firmware\qcom\sc8280xp\LENOVO\21BX\{qcadsp,qccdsp,qcslpi}8280.mbn`.
 3. Copy `qebspilaa64.efi` to `\EFI\slbounce\` and edit `startup.nsh` so it does
-   `load qebspilaa64.efi` before `load slbounce.efi`. **Hook order matters:**
-   both act at ExitBootServices, and the DSPs must be booted before slbounce
-   leaves the Qualcomm hypervisor. Try qebspil first. If that fails, try the
-   other order and note it.
+   `load qebspilaa64.efi` before `load slbounce.efi` (`scripts/install-esp.sh`).
+   Load order doesn't matter: qebspil runs as an ExitBootServices event
+   callback (TPL_CALLBACK-1) *inside* the real ExitBootServices(); slbounce
+   replaces `BS->ExitBootServices` and switches to EL2 only after the real
+   call returns (`slbounce/src/bounce_main.c`).
+   The X13s dtb has no `qcom,broken-reset`, so the smoke test uses the
+   `QEBSPIL_ALWAYS_START=1` build (`out/qebspil/qebspilaa64-always.efi`).
 4. Boot the EL2 entry with the stock `7.0.0-43` kernel. Expected: the UEFI shell
    shows qebspil output. Linux then still tries PAS and fails (no attach
    patches), but the DSP state (`/sys/class/remoteproc/*/state`, `dmesg`)
@@ -172,9 +175,11 @@ chain (photo of the shell output + dmesg in `notes/boot-log.md`).
    `sc8280xp-{adsp,nsp0,slpi}-pas` take the attach path at EL2 and keep the
    normal PAS path at EL1. **The same kernel must boot both ways** (it's
    handy, and it proves EL1 hasn't regressed).
-5. DT: build an overlay/dtb `dts/sc8280xp-lenovo-thinkpad-x13s-el2-dsp.dtb` =
-   stock -el2 dtb plus `qcom,broken-reset` on adsp/cdsp/slpi if qebspil and
-   the patches want it (otherwise use `QEBSPIL_ALWAYS_START=1`).
+5. DT: **required.** The attach-only path (0007/0010) only turns on when the
+   node has `qcom,broken-reset` (and the machine isn't on the EL2-PAS-capable
+   list). `dts/x13s-el2-dsp.dtso` adds it to slpi/adsp/cdsp;
+   `scripts/build-dtb.sh [base.dtb]` -> `out/dtb/sc8280xp-lenovo-thinkpad-x13s-el2-dsp.dtb`.
+   With this dtb the default (non-"always") qebspil build is enough too.
 
 **Done when:** the patches apply cleanly via `scripts/apply-patches.sh` and the tree builds `drivers/remoteproc/`.
 
@@ -238,7 +243,7 @@ chain (photo of the shell output + dmesg in `notes/boot-log.md`).
 
 ## Risks / open questions
 
-- Ordering of qebspil vs slbounce at ExitBootServices is untested.
+- ~~Ordering of qebspil vs slbounce~~: resolved, see Phase 1.3.
 - The patches target 7.3-rc + X1E, so backporting to 7.0 may drag in
   dependencies. Fallback: build Ubuntu's `7.1`/mainline instead, but the
   phase6 notes say the upstream -el2 dtb remoteproc `iommus` hang 7.1+

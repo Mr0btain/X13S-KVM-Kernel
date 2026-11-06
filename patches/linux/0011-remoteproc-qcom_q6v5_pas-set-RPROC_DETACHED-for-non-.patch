@@ -1,0 +1,34 @@
+From b1482e1e1590306027ebf5ebd6d7df1ceab84ec5 Mon Sep 17 00:00:00 2001
+From: Jens Glathe <jens.glathe@oldschoolsolutions.biz>
+Date: Fri, 16 Oct 2026 09:07:42 +0200
+Subject: [PATCH] remoteproc: qcom_q6v5_pas: set RPROC_DETACHED for non-PAS
+ path
+
+When the non-PAS (attach-only) path is selected, mark the remoteproc
+RPROC_DETACHED before rproc_add(). This tells the remoteproc core that
+the remote is already running and should only be attached to, rather
+than treated as offline and potentially subject to start or recovery
+logic that assumes a full boot path is available.
+
+Co-developed-by: Val Packett <val@packett.cool>
+Signed-off-by: Jens Glathe <jens.glathe@oldschoolsolutions.biz>
+---
+ drivers/remoteproc/qcom_q6v5_pas.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/remoteproc/qcom_q6v5_pas.c b/drivers/remoteproc/qcom_q6v5_pas.c
+index e7b1366..813fa78 100644
+--- a/drivers/remoteproc/qcom_q6v5_pas.c
++++ b/drivers/remoteproc/qcom_q6v5_pas.c
+@@ -1036,7 +1036,7 @@ static int qcom_pas_probe(struct platform_device *pdev)
+ 			pas->dtb_pas_ctx->use_tzmem = desc->needs_tzmem || rproc->has_iommu;
+ 	}
+ 
+-	if (desc->early_boot)
++	if (desc->early_boot || !use_pas)
+ 		pas->rproc->state = RPROC_DETACHED;
+ 
+ 	ret = rproc_add(rproc);
+-- 
+2.53.0
+

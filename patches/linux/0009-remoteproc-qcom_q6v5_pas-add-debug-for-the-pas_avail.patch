@@ -1,0 +1,31 @@
+From 8b1a2945bfeb58ab28f6ba0ffe12d39fa961c8a3 Mon Sep 17 00:00:00 2001
+From: Jens Glathe <jens.glathe@oldschoolsolutions.biz>
+Date: Wed, 14 Oct 2026 22:37:58 +0200
+Subject: [PATCH] remoteproc: qcom_q6v5_pas: add debug for the pas_available
+ check
+
+deliberately before deferring.
+
+Signed-off-by: Jens Glathe <jens.glathe@oldschoolsolutions.biz>
+---
+ drivers/remoteproc/qcom_q6v5_pas.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/drivers/remoteproc/qcom_q6v5_pas.c b/drivers/remoteproc/qcom_q6v5_pas.c
+index 1373c85..092003c 100644
+--- a/drivers/remoteproc/qcom_q6v5_pas.c
++++ b/drivers/remoteproc/qcom_q6v5_pas.c
+@@ -867,6 +867,10 @@ static int qcom_pas_probe(struct platform_device *pdev)
+ 	no_pas_scm = !pas_avail || !scm_avail;
+ 	broken_reset = device_property_read_bool(&pdev->dev, "qcom,broken-reset");
+ 
++	dev_info(&pdev->dev,
++			 "pas_avail=%d scm_avail=%d no_pas_scm=%d broken_reset=%d\n",
++			 pas_avail, scm_avail, no_pas_scm, broken_reset);
++
+ 	if (!pas_avail && !broken_reset)
+ 		return -EPROBE_DEFER;
+ 
+-- 
+2.53.0
+
