@@ -45,6 +45,10 @@ if [ -n "$el2ver" ]; then
 		echo "el2-grubcfg: missing $DTBO; DSPs won't attach" >&2
 		cp "$(dtb_for "$el2ver")" "$KDIR/$el2ver.dtb"
 	fi
+	# Suspend test (notes/boot-log.md): same dtb without the cluster power-
+	# collapse state (cluster-sleep-0, PSCI 0x4100c344); s2idle resets at EL2.
+	cp "$KDIR/$el2ver.dtb" "$KDIR/$el2ver-nocluster.dtb"
+	fdtput -d "$KDIR/$el2ver-nocluster.dtb" /psci/power-domain-cpu-cluster0 domain-idle-states
 fi
 
 # Stock Ubuntu vmlinuz is a stubble (systemd-stub) PE that swaps in its own
@@ -59,7 +63,7 @@ fi
 # Drop files whose kernel package is gone.
 for f in "$KDIR"/vmlinuz-* "$KDIR"/*.dtb; do
 	[ -e "$f" ] || continue
-	v=${f##*/}; v=${v#vmlinuz-}; v=${v%.dtb}
+	v=${f##*/}; v=${v#vmlinuz-}; v=${v%.dtb}; v=${v%-nocluster}
 	[ -e "/boot/vmlinuz-$v" ] || rm -f "$f"
 done
 
@@ -73,6 +77,11 @@ menuentry 'Linux $el2ver (EL2 / KVM + DSPs)' {
 	linux	/boot/vmlinuz-$el2ver root=UUID=$uuid ro $args
 	initrd	/boot/initrd.img-$el2ver
 	devicetree	/boot/el2/$el2ver.dtb
+}
+menuentry 'Linux $el2ver (EL2 / KVM + DSPs, no cluster idle: suspend test)' {
+	linux	/boot/vmlinuz-$el2ver root=UUID=$uuid ro $args
+	initrd	/boot/initrd.img-$el2ver
+	devicetree	/boot/el2/$el2ver-nocluster.dtb
 }
 EOF
 	fi
