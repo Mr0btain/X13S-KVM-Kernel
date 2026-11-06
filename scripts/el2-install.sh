@@ -41,7 +41,12 @@ grub-mkimage -O arm64-efi -o "$EL2/grub/grubel2.efi" -p /boot/grub \
   normal configfile search search_fs_file search_fs_uuid part_gpt fat ext2 linux fdt \
   gzio echo test efi_gop all_video gfxterm font reboot halt efifwsetup lsefisystab sleep
 
-for f in "$EL2/slbounce/out/slbounce.efi" "$EL2/grub/grubel2.efi" "$EL2/tcblaunch.exe" \
+# slbounce.efi: scripts/build-efi.sh / a release (out/slbounce), or the
+# original hand build in out/el2/slbounce. tcblaunch.exe: see notes/slbounce-el2.md.
+SLBOUNCE="$TOP/out/slbounce/slbounce.efi"
+[ -e "$SLBOUNCE" ] || SLBOUNCE="$EL2/slbounce/out/slbounce.efi"
+
+for f in "$SLBOUNCE" "$EL2/grub/grubel2.efi" "$EL2/tcblaunch.exe" \
          /usr/share/efi-shell-aa64/shellaa64.efi; do
   [ -e "$f" ] || { echo "missing $f" >&2; exit 1; }
 done
@@ -49,7 +54,7 @@ done
 # slbounce opens tcblaunch.exe from the root of the volume it was loaded from.
 cp -L "$EL2/tcblaunch.exe" "$ESP/tcblaunch.exe"
 mkdir -p "$DST"
-cp "$EL2/slbounce/out/slbounce.efi" "$EL2/grub/grubel2.efi" \
+cp "$SLBOUNCE" "$EL2/grub/grubel2.efi" \
    /usr/share/efi-shell-aa64/shellaa64.efi "$TOP/scripts/el2/startup.nsh" "$DST/"
 sync
 

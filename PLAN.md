@@ -11,6 +11,7 @@
 | 4 Boot integration | **done 2026-11-06**: EL2 entry boots 7.3.1-el2, DSPs attached |
 | 5 Test checklist | **daily-usable at EL2**: KVM, DSPs, battery/charging, audio, Wi-Fi/BT, suspend. Open: 2nd USB-C PHY (intermittent), suspend drain. See `notes/boot-log.md` |
 | 6 Leftovers (venus, EFI vars) | optional |
+| 7 CI + releases | `.github/workflows/build.yml` + `scripts/ci-build.sh`; sources pinned in `sources.env`, config in `config/` (see README) |
 
 Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
 battery, charging, USB-C, audio and the rest, so the EL2 entry can become the

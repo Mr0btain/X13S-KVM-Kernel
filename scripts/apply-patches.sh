@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Apply patches/linux/*.patch onto src/linux-7.3 as commits on branch "el2"
-# (recreated from the base tag each run).
+# Apply patches/linux/*.patch onto $LINUX_DIR as commits on branch "el2"
+# (recreated from LINUX_TAG each run). Paths/tag come from sources.env.
 set -euo pipefail
 TOP="$(cd "$(dirname "$0")/.." && pwd)"
-SRC="${SRC:-$TOP/src/linux-7.3}"
-BASE="${BASE:-v7.3.1}"
+. "$TOP/sources.env"
+SRC="${SRC:-$TOP/$LINUX_DIR}"
+BASE="${BASE:-$LINUX_TAG}"
 cd "$SRC"
 git -c advice.detachedHead=false checkout -q "$BASE" 2>/dev/null || git checkout -q "$(git rev-list --max-parents=0 HEAD | tail -1)"
 git checkout -q -B el2
