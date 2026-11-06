@@ -28,3 +28,16 @@ Problems this boot:
 - `bpf-restrict-fs: Failed to load BPF object`: systemd's RestrictFileSystems
   needs BTF; we built with `DEBUG_INFO_NONE`. Fix: rebuild with
   `DEBUG_INFO_DWARF5` + `DEBUG_INFO_BTF` (needs `dwarves`/pahole).
+
+### Follow-up tests, same kernel (2026-11-06, boot at 13:49)
+- **Sound**: works (user test). **Emulator `-accel on`**: works (user test).
+- **Charger**: plug/unplug on both USB-C ports detected; `qcom-battmgr-usb`
+  online 0->1, status Discharging -> Charging -> "Not charging" (battery at
+  100 %, expected), UCSI shows the correct port (`ucsi=01` / `10`). Charging
+  power goes through even on the port whose dwc3 failed (PD is PMIC/ADSP).
+- **Suspend: hard reset.** Two EL2 boots (-3, -1): last persisted line is
+  `kernel: PM: suspend entry (s2idle)`, then the machine resets into the
+  normal boot entry. Not yet tested: stock 7.0 at EL2, 7.3.1-el2 at EL1.
+  Runtime per-CPU deep idle (`cpu-sleep-0-0`, ~37k entries) is fine; PSCI is
+  identical at EL1/EL2 (OSI mode, "failed to set PC mode: -3" in both).
+  Bisect with `scripts/suspend-test.sh` -> `notes/suspend-tests.log`.

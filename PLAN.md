@@ -243,13 +243,13 @@ Build gotchas (2026-11-06):
 
 ## Phase 5: Test checklist (EL2 boot, record in notes/boot-log.md)
 
-- [x] `CPU: All CPU(s) started at EL2`, `/dev/kvm` (AVD `-accel on` still to run)
+- [x] `CPU: All CPU(s) started at EL2`, `/dev/kvm` + AVD `-accel on` (user-tested)
 - [x] `remoteproc*: attached` / state `attached` or `running` for adsp, cdsp, slpi
-- [x] Battery % (discharging) / [ ] charging state (`upower -d`, GNOME indicator); AC plug/unplug events
+- [x] Battery % + charging state (both ports) (`upower -d`, GNOME indicator); AC plug/unplug events
 - [ ] USB-C: both ports (2nd port's PHY timed out on boot #1, see boot-log), both orientations, USB3 speed; DP alt mode to a monitor
-- [ ] Audio: speakers, headphone jack, internal mics (`alsaucm`, pipewire)
+- [x] Audio (user-tested): speakers, headphone jack, internal mics (`alsaucm`, pipewire)
 - [x] Wi-Fi + Bluetooth
-- [ ] Suspend/resume (s2idle) ×3: DSPs still alive afterwards, battery still updating
+- [ ] **Suspend/resume (s2idle) ×3: currently hard-resets at `PM: suspend entry`, bisecting**: DSPs still alive afterwards, battery still updating
 - [ ] Lid close, brightness, keyboard backlight, thermals (`sensors`), fan
 - [ ] Uptime soak: a day of normal use + an emulator session, no DSP crashes
 - [ ] Same kernel at EL1 (normal entry, if installed there): no regressions
