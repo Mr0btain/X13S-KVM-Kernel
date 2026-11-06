@@ -1,6 +1,6 @@
 #!/bin/sh
 # Write /boot/grub/el2.cfg for grubel2.efi (EL2 / KVM boot entry).
-# Replaces AndroidEmulator/scripts/el2-grubcfg.sh; installed as
+# Installed as
 # /etc/kernel/postinst.d/zz-el2-grubcfg by scripts/install-kernel.sh.
 #
 # Entry 1: newest *-el2 kernel (patched, DSP attach) + X13s -el2 dtb with

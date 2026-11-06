@@ -16,8 +16,8 @@ Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
 battery, charging, USB-C, audio and the rest, so the EL2 entry can become the
 daily boot. The normal (EL1) entry stays untouched as the fallback.
 
-Builds on `../AndroidEmulator` Phase 6 (slbounce, `scripts/el2-install.sh`,
-`notes/phase6-kvm.md`).
+Builds on the slbounce EL2 boot (`scripts/el2-install.sh`,
+`notes/slbounce-el2.md`, moved here from AndroidEmulator).
 
 ## What breaks at EL2 today (journal, EL2 boot `-b -11`, kernel 7.0.0-42)
 
@@ -231,7 +231,7 @@ Build gotchas (2026-11-06):
    `7.0.0-43-generic`, so set `GRUB_FLAVOUR_ORDER=generic` in
    `/etc/default/grub.d/` (or `GRUB_DEFAULT` to the stock entry) and check
    `update-grub` output.
-3. `scripts/el2-grubcfg.sh` (replaces AndroidEmulator's hook via `scripts/install-kernel.sh`):
+3. `scripts/el2-grubcfg.sh` (installed as the kernel hook by `scripts/install-kernel.sh`):
    prefer the newest `*-el2` kernel, fall back to `-generic`. Our kernel is a
    plain Image, not a stubble PE, so no `.linux` extraction needed (keep it
    for the fallback). Use the dtb from Phase 2.5. Also add a second menu
@@ -299,4 +299,4 @@ Build gotchas (2026-11-06):
 - Earlier version: https://patchew.org/linux/20251121-kvm._5Frproc._5Fv8-v8-0-8e8e9fb0eca0@oss.qualcomm.com/
 - Upstream overlay: arch/arm64/boot/dts/qcom/sc8280xp-el2.dtso (GPU zap + PCIe SMMU only)
 - Ubuntu kernel git: https://git.launchpad.net/~ubuntu-kernel/ubuntu/+source/linux/+git/resolute (tag Ubuntu-7.0.0-43.43)
-- Phase 6 notes: ../AndroidEmulator/notes/phase6-kvm.md
+- slbounce/EL2 notes: notes/slbounce-el2.md

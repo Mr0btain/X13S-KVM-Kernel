@@ -3,7 +3,7 @@
 #   \EFI\slbounce\qebspilaa64.efi        (QEBSPIL_ALWAYS_START=1 build)
 #   \EFI\slbounce\startup.nsh            (loads qebspil before slbounce, if present)
 #   \firmware\qcom\sc8280xp\LENOVO\21BX\  (uncompressed DSP firmware qebspil reads)
-# Needs ../AndroidEmulator/scripts/el2-install.sh to have run first.
+# Needs scripts/el2-install.sh to have run first.
 # The normal Ubuntu boot entry is not touched. --remove undoes it
 # (startup.nsh stays; it skips qebspil when the .efi is gone).
 set -euo pipefail
@@ -17,7 +17,7 @@ EFI="${QEBSPIL_EFI:-$TOP/out/qebspil/qebspilaa64-always.efi}"
 FW="qcadsp8280.mbn qccdsp8280.mbn qcslpi8280.mbn"
 
 [ "$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
-[ -e "$DST/slbounce.efi" ] || { echo "no $DST/slbounce.efi: run AndroidEmulator/scripts/el2-install.sh first" >&2; exit 1; }
+[ -e "$DST/slbounce.efi" ] || { echo "no $DST/slbounce.efi: run scripts/el2-install.sh first" >&2; exit 1; }
 
 if [ "${1:-}" = "--remove" ]; then
   rm -f "$DST/qebspilaa64.efi"

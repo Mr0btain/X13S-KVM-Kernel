@@ -3,14 +3,14 @@
 #   - dpkg -i out/linux-image-*-el2*.deb (+ headers)
 #   - keep the normal GRUB menu on stock -generic kernels (GRUB_FLAVOUR_ORDER)
 #   - DSP dtb overlay -> /usr/local/share/kernel-work/
-#   - kernel-work el2-grubcfg replaces AndroidEmulator's zz-el2-grubcfg hook
+#   - scripts/el2-grubcfg.sh as the zz-el2-grubcfg kernel hook
 # Needs root. --remove purges the -el2 packages and restores the old hook.
 set -euo pipefail
 TOP="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK=/etc/kernel/postinst.d/zz-el2-grubcfg
 GRUBD=/etc/default/grub.d/90-kernel-work.cfg
 SHARE=/usr/local/share/kernel-work
-OLDHOOK="$TOP/../AndroidEmulator/scripts/el2-grubcfg.sh"
+
 
 [ "$(id -u)" = 0 ] || { echo "run with sudo" >&2; exit 1; }
 
@@ -18,7 +18,7 @@ if [ "${1:-}" = "--remove" ]; then
   pkgs=$(dpkg-query -W -f '${Package}\n' 'linux-image-*-el2' 'linux-headers-*-el2' 2>/dev/null || true)
   [ -n "$pkgs" ] && apt-get purge -y $pkgs
   rm -rf "$SHARE" "$GRUBD"
-  install -m 755 "$OLDHOOK" "$HOOK" && "$HOOK"
+  "$HOOK"   # el2.cfg falls back to the stock kernel at EL2
   update-grub
   exit 0
 fi
