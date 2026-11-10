@@ -14,7 +14,7 @@ audio, USB-C altmode and sensors go with them. This repo puts it back:
 | [slbounce](https://github.com/TravMurav/slbounce) | switches to EL2 at ExitBootServices (needs Windows' `tcblaunch.exe`) |
 | [qebspil](https://github.com/stephan-gh/qebspil) | UEFI driver that boots ADSP/CDSP/SLPI just before that switch |
 | `patches/linux/` on stable **v7.3.1** | lets Linux *attach* to the already-running DSPs at EL2 instead of trying (and failing) to boot them |
-| `dts/x13s-el2-dsp.dtso` | marks the DSPs `qcom,broken-reset` (selects the attach path) |
+| `dts/x13s-el2-dsp.dtso` | marks the DSPs `qcom,broken-reset` (selects the attach path); enables the embedded controller on i2c8 |
 | `scripts/el2-grubcfg.sh` | also drops the cluster idle state from the EL2 dtb (entering it in s2idle reset the machine at EL2) |
 
 The normal boot entry is never changed. EL2 is a separate firmware boot entry,
@@ -125,6 +125,7 @@ branch `jg/rproc_nohyp_attach` (authors: Stephan Gerhold, Jens Glathe):
 | 0005–0006 | qcom_q6v5: detect an already-running DSP at boot; `qcom_q6v5_attach()` |
 | 0007–0011 | qcom_q6v5_pas: attach-only path at EL2 when the platform's TZ can't do PAS there (gated by `qcom,broken-reset`) |
 | 0012 | kbuild: fix a parallel `dtbs_install` race in `bindeb-pkg` |
+| 0013 | new `lenovo-thinkpad-x13s` EC driver: Modern Standby notifications (power LED and lid dot breathe in suspend, as on Windows) and the mic-mute LED; see `notes/x13s-ec.md` |
 
 ## Repo layout
 
@@ -132,7 +133,7 @@ branch `jg/rproc_nohyp_attach` (authors: Stephan Gerhold, Jens Glathe):
 sources.env            pinned upstream sources (kernel tag, qebspil, slbounce)
 config/                kernel .config for the pinned tag
 patches/linux/         kernel patches (git am)
-dts/                   DT overlay for the DSPs
+dts/                   DT overlay for the DSPs and the EC
 scripts/
   fetch-sources.sh  apply-patches.sh  build-efi.sh  build-kernel.sh
   build-dtb.sh       package-release.sh  download-release.sh  ci-build.sh

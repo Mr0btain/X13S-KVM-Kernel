@@ -75,3 +75,49 @@ boots of 7.3.1-el2 (also once on stock 7.0 at EL1). Intermittent, known issue.
 Suspend from the desktop with the modem present: works; the modem comes back a
 few seconds after resume (pciehp re-enumeration). No modem workaround needed
 for now.
+
+### EC on i2c8 / lid LED investigation (2026-11-10)
+Goal: lid logo dot (and power LED) breathing in suspend, as on Windows.
+X13s DSDT (public Windows dump) puts the EC at 0x28 on `\_SB.I2C9` =
+`a80000` = DT `i2c8` (QUP1 SE0, gpio43/44, `qup8`), disabled in the stock DT.
+Same ECRD/ECWR protocol as the T14s Gen6 EC (`02 reg 00 01` + 1-byte read;
+`03 reg 00 01 val`). (0x28 on `a8c000`/i2c-22 is the WWAN SAR sensor, not the EC.)
+`x13s-el2-dsp.dtso` now enables i2c8 bare (no client). Booted 7.3.1-el2 at EL2:
+i2c8 = i2c-23, EC ACKs at 0x28; DSPs unaffected.
+
+| Test | Result |
+|---|---|
+| read 0x0c / 0x0d / 0xe0 | 0x00 / 0x00 / 0x00 |
+| read 0xc0 | 0x60 |
+| 0xc0 = 0x61 then 0x60 (DSDT `MMTS`: bit0 = mic-mute LED) | **mic-mute LED on/off: EC writes work** |
+| 0x0c = 0xca / 0xc0 (T14s/thinkpad_acpi LED reg: blink lid id 10 / power id 0) | no change |
+| 0xe0 = 0x02 then 0x01 (T14s modern-standby entry/exit) | no LED change, reads back 0x00 |
+
+So the T14s LED and modern-standby registers do not apply to the X13s EC. The
+DSDT never writes LED/standby registers; Windows reaches the EC through a WMI
+mailbox (`WH15`: 0x9611/0xB001-B004 = raw EC read/write) and an `SMI` path
+(`Notify(\_SB.TTZE, 0xC0)`), i.e. the standby LED write is in Lenovo's Windows
+software. Next: read-only EC dump 0x00-0xff, and/or find the register in the
+Lenovo Windows driver.
+Read-only dumps (unplugged/plugged) and the partial register map are in
+`notes/x13s-ec.md`. 0xa0-0xaf is the temperature table (not LEDs); no LED
+state is visible in reads (LED control looks write-only).
+**Found (same day):** standby notify is EC reg 0x80 (DSDT PEP0 Modern Standby
+`_DSM` -> `ECNT`): 0x66 display off, 0x55 sleep entry, 0xaa exit, 0xbb display
+on. Writing 0x66, 0x55 by hand: power-button LED breathed, lid dot went off. Details in
+`notes/x13s-ec.md`.
+Full Windows sequence by hand (0x66, 0x55, GPIO 176 low 12 s, GPIO 176 high,
+0xaa, 0xbb): **power LED and lid dot both breathe**, clean restore. Next: hook
+it into suspend/resume.
+
+### EC driver 0013 at EL2 (2026-11-10 18:21)
+7.3.1-el2 with `lenovo-thinkpad-x13s` (patches/linux/0013) + `embedded-controller@28`
+in the overlay. EL2, slpi/adsp/cdsp `attached`. Driver bound (`22-0028`; the i2c
+bus number moves between boots), no EC errors. Real s2idle (20 s): **power LED and
+lid dot breathe**, solid again on resume; GPIO 176 back `out high`; keyboard
+backlight restored. `platform::micmute` registered (trigger `audio-micmute`), but
+nothing drives it: no ALSA control is attached (`ctl-led/mic/card0/list` empty)
+because the UCM internal `Mic` device has no hardware capture switch (PipeWire
+mutes in software). F4 doesn't mute either; keyboard reports KEY_F20, not
+KEY_MICMUTE. Separate follow-up. The pciehp `pci_disable_device` WARNING at boot
+(modem link drop) is the known one, unrelated.

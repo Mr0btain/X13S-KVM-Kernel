@@ -1,0 +1,334 @@
+From 9fdea48a620a029d2ff7e267ee1f788c2bbe0c01 Mon Sep 17 00:00:00 2001
+From: Mr0btain <108532146+Mr0btain@users.noreply.github.com>
+Date: Tue, 10 Nov 2026 18:10:36 -0500
+Subject: [PATCH] platform: arm64: add Lenovo ThinkPad X13s EC driver
+
+The X13s EC sits at 0x28 on i2c8 (QUP1 SE0) and uses the same ECRD/ECWR
+protocol as the ThinkPad T14s Gen6 EC, but a different register map.
+
+On Windows the PEP Modern Standby _DSM (11e00d56-ce64-47ce-837b-1f898f9aa461)
+notifies the EC by writing register 0x80 (0x66 display off, 0x55 sleep
+entry, 0xaa sleep exit, 0xbb display on) and drives GPIO 176 low while the
+SoC sleeps. Linux boots the X13s from DT and never sends these, so the EC
+never enters its standby LED mode. Send the same sequence from system
+suspend/resume: the power button LED and the lid logo dot then breathe while
+suspended. On resume also restore the keyboard backlight level the EC
+saved (0x15[2:1] -> 0xc0[5:4], DSDT SCMS 0x21).
+
+Also expose the mic-mute LED (0xc0 bit 0) as platform::micmute with the
+audio-micmute trigger.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/platform/arm64/Kconfig                |  17 ++
+ drivers/platform/arm64/Makefile               |   1 +
+ drivers/platform/arm64/lenovo-thinkpad-x13s.c | 259 ++++++++++++++++++
+ 3 files changed, 277 insertions(+)
+ create mode 100644 drivers/platform/arm64/lenovo-thinkpad-x13s.c
+
+diff --git a/drivers/platform/arm64/Kconfig b/drivers/platform/arm64/Kconfig
+index e32e01b2a..f492c8676 100644
+--- a/drivers/platform/arm64/Kconfig
++++ b/drivers/platform/arm64/Kconfig
+@@ -90,6 +90,23 @@ config EC_LENOVO_THINKPAD_T14S
+ 
+ 	  Say M or Y here to include this support.
+ 
++config EC_LENOVO_THINKPAD_X13S
++	tristate "Lenovo ThinkPad X13s Embedded Controller driver"
++	depends on ARCH_QCOM || COMPILE_TEST
++	depends on I2C
++	depends on GPIOLIB
++	select LEDS_CLASS
++	select NEW_LEDS
++	select REGMAP
++	select SND_CTL_LED if SND
++	help
++	  Driver for the Embedded Controller in the Qualcomm Snapdragon-based
++	  Lenovo ThinkPad X13s. It sends the EC the Modern Standby
++	  notifications Windows sends, so the power button LED and lid logo
++	  dot breathe while suspended, and provides the mic-mute LED.
++
++	  Say M or Y here to include this support.
++
+ config EC_QCOM_HAMOA
+ 	tristate "Embedded Controller driver for Qualcomm Hamoa/Glymur reference devices"
+ 	depends on ARCH_QCOM || COMPILE_TEST
+diff --git a/drivers/platform/arm64/Makefile b/drivers/platform/arm64/Makefile
+index 7681be4a4..23ed6eef7 100644
+--- a/drivers/platform/arm64/Makefile
++++ b/drivers/platform/arm64/Makefile
+@@ -9,4 +9,5 @@ obj-$(CONFIG_EC_ACER_ASPIRE1)	+= acer-aspire1-ec.o
+ obj-$(CONFIG_EC_HUAWEI_GAOKUN)	+= huawei-gaokun-ec.o
+ obj-$(CONFIG_EC_LENOVO_YOGA_C630) += lenovo-yoga-c630.o
+ obj-$(CONFIG_EC_LENOVO_THINKPAD_T14S) += lenovo-thinkpad-t14s.o
++obj-$(CONFIG_EC_LENOVO_THINKPAD_X13S) += lenovo-thinkpad-x13s.o
+ obj-$(CONFIG_EC_QCOM_HAMOA) += qcom-hamoa-ec.o
+diff --git a/drivers/platform/arm64/lenovo-thinkpad-x13s.c b/drivers/platform/arm64/lenovo-thinkpad-x13s.c
+new file mode 100644
+index 000000000..127a2d3bf
+--- /dev/null
++++ b/drivers/platform/arm64/lenovo-thinkpad-x13s.c
+@@ -0,0 +1,259 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Lenovo ThinkPad X13s (SC8280XP) Embedded Controller
++ *
++ * The EC sits at 0x28 on QUP1 SE0 (i2c8) and speaks the same ECRD/ECWR
++ * protocol as the ThinkPad T14s Gen6 EC, but with a different register map.
++ * Everything here comes from the X13s ACPI DSDT shipped for Windows:
++ *
++ *  - Modern Standby notifications (PEP0 _DSM 11e00d56-..., via \_SB.I2C9.ECNT)
++ *    write EC register 0x80: 0x66 display off, 0x55 sleep entry, 0xaa sleep
++ *    exit, 0xbb display on. On sleep entry/exit the SoC also drives a GPIO to
++ *    the EC (low while asleep). With both, the EC breathes the power button
++ *    LED and the lid logo dot while suspended.
++ *  - On display on the DSDT restores the keyboard backlight level that the EC
++ *    saved in 0x15[2:1] into 0xc0[5:4] (SCMS 0x21).
++ *  - The mic-mute LED is 0xc0 bit 0 (HKEY.MMTS).
++ */
++
++#include <linux/bits.h>
++#include <linux/bitfield.h>
++#include <linux/delay.h>
++#include <linux/device.h>
++#include <linux/err.h>
++#include <linux/gpio/consumer.h>
++#include <linux/i2c.h>
++#include <linux/leds.h>
++#include <linux/module.h>
++#include <linux/pm.h>
++#include <linux/regmap.h>
++
++#define X13S_EC_CMD_ECRD		0x02
++#define X13S_EC_CMD_ECWR		0x03
++#define X13S_EC_WRITE_TRIES		2
++
++#define X13S_EC_REG_KBD_BL_SAVE		0x15
++#define X13S_EC_KBD_BL_SAVE_MASK	GENMASK(2, 1)
++
++#define X13S_EC_REG_STANDBY		0x80
++#define X13S_EC_STANDBY_DISPLAY_OFF	0x66
++#define X13S_EC_STANDBY_SLEEP_ENTRY	0x55
++#define X13S_EC_STANDBY_SLEEP_EXIT	0xaa
++#define X13S_EC_STANDBY_DISPLAY_ON	0xbb
++
++#define X13S_EC_REG_LED_KBD		0xc0
++#define X13S_EC_MIC_MUTE_LED		BIT(0)
++#define X13S_EC_KBD_BL_MASK		GENMASK(5, 4)
++
++struct x13s_ec {
++	struct device *dev;
++	struct regmap *regmap;
++	struct gpio_desc *sleep_gpio;
++	struct led_classdev led_mic_mute;
++};
++
++static const struct regmap_config x13s_ec_regmap_config = {
++	.reg_bits = 8,
++	.val_bits = 8,
++	.max_register = 0xff,
++};
++
++static int x13s_ec_write(void *context, unsigned int reg, unsigned int val)
++{
++	struct x13s_ec *ec = context;
++	struct i2c_client *client = to_i2c_client(ec->dev);
++	u8 buf[5] = { X13S_EC_CMD_ECWR, reg, 0x00, 0x01, val };
++	int ret, i;
++
++	/* The DSDT (ECWS) retries a failed write once after 10 ms. */
++	for (i = 0; i < X13S_EC_WRITE_TRIES; i++) {
++		ret = i2c_master_send(client, buf, sizeof(buf));
++		fsleep(10000);
++		if (ret == sizeof(buf))
++			return 0;
++	}
++
++	return ret < 0 ? ret : -EIO;
++}
++
++static int x13s_ec_read(void *context, unsigned int reg, unsigned int *val)
++{
++	struct x13s_ec *ec = context;
++	struct i2c_client *client = to_i2c_client(ec->dev);
++	u8 buf[4] = { X13S_EC_CMD_ECRD, reg, 0x00, 0x01 };
++	struct i2c_msg request = {
++		.addr = client->addr,
++		.flags = I2C_M_STOP,
++		.len = sizeof(buf),
++		.buf = buf,
++	};
++	struct i2c_msg response = {
++		.addr = client->addr,
++		.flags = I2C_M_RD,
++		.len = 1,
++	};
++	u8 result;
++	int ret;
++
++	response.buf = &result;
++
++	/* Request and response must not be split by another transfer. */
++	i2c_lock_bus(client->adapter, I2C_LOCK_SEGMENT);
++
++	ret = __i2c_transfer(client->adapter, &request, 1);
++	if (ret < 0)
++		goto out;
++
++	ret = __i2c_transfer(client->adapter, &response, 1);
++	if (ret < 0)
++		goto out;
++
++	*val = result;
++	ret = 0;
++
++out:
++	i2c_unlock_bus(client->adapter, I2C_LOCK_SEGMENT);
++	fsleep(10000);
++	return ret;
++}
++
++static const struct regmap_bus x13s_ec_regmap_bus = {
++	.reg_write = x13s_ec_write,
++	.reg_read = x13s_ec_read,
++};
++
++static enum led_brightness x13s_mic_mute_led_get(struct led_classdev *led_cdev)
++{
++	struct x13s_ec *ec = container_of(led_cdev, struct x13s_ec, led_mic_mute);
++	unsigned int val;
++
++	if (regmap_read(ec->regmap, X13S_EC_REG_LED_KBD, &val))
++		return LED_OFF;
++
++	return (val & X13S_EC_MIC_MUTE_LED) ? LED_ON : LED_OFF;
++}
++
++static int x13s_mic_mute_led_set(struct led_classdev *led_cdev,
++				 enum led_brightness brightness)
++{
++	struct x13s_ec *ec = container_of(led_cdev, struct x13s_ec, led_mic_mute);
++
++	return regmap_assign_bits(ec->regmap, X13S_EC_REG_LED_KBD,
++				  X13S_EC_MIC_MUTE_LED, brightness > 0);
++}
++
++static int x13s_ec_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct x13s_ec *ec;
++	unsigned int val;
++	int ret;
++
++	ec = devm_kzalloc(dev, sizeof(*ec), GFP_KERNEL);
++	if (!ec)
++		return -ENOMEM;
++
++	ec->dev = dev;
++	i2c_set_clientdata(client, ec);
++
++	ec->regmap = devm_regmap_init(dev, &x13s_ec_regmap_bus, ec,
++				      &x13s_ec_regmap_config);
++	if (IS_ERR(ec->regmap))
++		return dev_err_probe(dev, PTR_ERR(ec->regmap),
++				     "Failed to init regmap\n");
++
++	/* Make sure the EC answers before registering anything. */
++	ret = regmap_read(ec->regmap, X13S_EC_REG_LED_KBD, &val);
++	if (ret)
++		return dev_err_probe(dev, ret, "EC not responding\n");
++
++	/* Firmware leaves the line high (awake); keep it that way. */
++	ec->sleep_gpio = devm_gpiod_get_optional(dev, "sleep", GPIOD_OUT_LOW);
++	if (IS_ERR(ec->sleep_gpio))
++		return dev_err_probe(dev, PTR_ERR(ec->sleep_gpio),
++				     "Failed to get sleep GPIO\n");
++
++	ec->led_mic_mute.name = "platform::micmute";
++	ec->led_mic_mute.max_brightness = 1;
++	ec->led_mic_mute.default_trigger = "audio-micmute";
++	ec->led_mic_mute.brightness_set_blocking = x13s_mic_mute_led_set;
++	ec->led_mic_mute.brightness_get = x13s_mic_mute_led_get;
++
++	ret = devm_led_classdev_register(dev, &ec->led_mic_mute);
++	if (ret)
++		return ret;
++
++	return 0;
++}
++
++static void x13s_ec_standby(struct x13s_ec *ec, u8 val)
++{
++	int ret;
++
++	ret = regmap_write(ec->regmap, X13S_EC_REG_STANDBY, val);
++	if (ret)
++		dev_warn(ec->dev, "standby notify 0x%02x failed: %d\n", val, ret);
++}
++
++static int x13s_ec_suspend(struct device *dev)
++{
++	struct x13s_ec *ec = dev_get_drvdata(dev);
++
++	/* Same order as the Windows Modern Standby path (PEP0 _DSM 3, 5). */
++	x13s_ec_standby(ec, X13S_EC_STANDBY_DISPLAY_OFF);
++	x13s_ec_standby(ec, X13S_EC_STANDBY_SLEEP_ENTRY);
++	gpiod_set_value_cansleep(ec->sleep_gpio, 1);
++
++	return 0;
++}
++
++static int x13s_ec_resume(struct device *dev)
++{
++	struct x13s_ec *ec = dev_get_drvdata(dev);
++	unsigned int val;
++
++	/* PEP0 _DSM 6, 4 */
++	gpiod_set_value_cansleep(ec->sleep_gpio, 0);
++	fsleep(10000);
++	x13s_ec_standby(ec, X13S_EC_STANDBY_SLEEP_EXIT);
++	x13s_ec_standby(ec, X13S_EC_STANDBY_DISPLAY_ON);
++
++	/* Restore the keyboard backlight level saved by the EC (SCMS 0x21). */
++	if (!regmap_read(ec->regmap, X13S_EC_REG_KBD_BL_SAVE, &val))
++		regmap_update_bits(ec->regmap, X13S_EC_REG_LED_KBD,
++				   X13S_EC_KBD_BL_MASK,
++				   FIELD_PREP(X13S_EC_KBD_BL_MASK,
++					      FIELD_GET(X13S_EC_KBD_BL_SAVE_MASK, val)));
++
++	return 0;
++}
++
++static const struct dev_pm_ops x13s_ec_pm_ops = {
++	SYSTEM_SLEEP_PM_OPS(x13s_ec_suspend, x13s_ec_resume)
++};
++
++static const struct of_device_id x13s_ec_of_match[] = {
++	{ .compatible = "lenovo,thinkpad-x13s-ec" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, x13s_ec_of_match);
++
++static const struct i2c_device_id x13s_ec_i2c_id_table[] = {
++	{ .name = "thinkpad-x13s-ec" },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, x13s_ec_i2c_id_table);
++
++static struct i2c_driver x13s_ec_i2c_driver = {
++	.driver = {
++		.name = "thinkpad-x13s-ec",
++		.of_match_table = x13s_ec_of_match,
++		.pm = &x13s_ec_pm_ops,
++	},
++	.probe = x13s_ec_probe,
++	.id_table = x13s_ec_i2c_id_table,
++};
++module_i2c_driver(x13s_ec_i2c_driver);
++
++MODULE_DESCRIPTION("Lenovo ThinkPad X13s Embedded Controller");
++MODULE_LICENSE("GPL");
+-- 
+2.53.0
+

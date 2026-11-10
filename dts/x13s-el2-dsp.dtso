@@ -19,3 +19,50 @@
 &{/soc@0/remoteproc@1b300000} {	/* cdsp (nsp0) */
 	qcom,broken-reset;
 };
+
+/*
+ * Embedded controller. The X13s DSDT puts the EC at 0x28 on \_SB.I2C9
+ * (QUP1 SE0, 0xa80000 = i2c8), talking the same ECRD/ECWR protocol as the
+ * ThinkPad T14s Gen6 EC. Driven by lenovo-thinkpad-x13s.c
+ * (patches/linux/0013): Modern Standby notifications (power LED and lid dot
+ * breathe in suspend) and the mic-mute LED. GPIO 176 is the SoC->EC sleep
+ * line the DSDT drives low on sleep entry (SGOV 0xB0); firmware leaves it a
+ * high GPIO output. See notes/x13s-ec.md.
+ */
+&{/soc@0/pinctrl@f100000} {
+	i2c8_default: i2c8-default-state {
+		pins = "gpio43", "gpio44";
+		function = "qup8";
+		drive-strength = <16>;
+		bias-disable;
+	};
+
+	ec_sleep_default: ec-sleep-default-state {
+		pins = "gpio176";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+};
+
+&{/soc@0/geniqup@ac0000} {
+	status = "okay";
+};
+
+&{/soc@0/geniqup@ac0000/i2c@a80000} {
+	clock-frequency = <400000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c8_default>;
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	embedded-controller@28 {
+		compatible = "lenovo,thinkpad-x13s-ec";
+		reg = <0x28>;
+		/* <&tlmm 176 GPIO_ACTIVE_LOW>: asserted (low) = SoC asleep */
+		sleep-gpios = <&tlmm 176 1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ec_sleep_default>;
+	};
+};
