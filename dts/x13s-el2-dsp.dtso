@@ -25,9 +25,10 @@
  * (QUP1 SE0, 0xa80000 = i2c8), talking the same ECRD/ECWR protocol as the
  * ThinkPad T14s Gen6 EC. Driven by lenovo-thinkpad-x13s.c
  * (patches/linux/0013): Modern Standby notifications (power LED and lid dot
- * breathe in suspend) and the mic-mute LED. GPIO 176 is the SoC->EC sleep
- * line the DSDT drives low on sleep entry (SGOV 0xB0); firmware leaves it a
- * high GPIO output. See notes/x13s-ec.md.
+ * breathe in suspend), EC hotkeys and the mic-mute LED. GPIO 176 is the
+ * SoC->EC sleep line the DSDT drives low on sleep entry (SGOV 0xB0); firmware
+ * leaves it a high GPIO output. GPIO 103 is the EC event interrupt.
+ * See notes/x13s-ec.md.
  */
 &{/soc@0/pinctrl@f100000} {
 	i2c8_default: i2c8-default-state {
@@ -39,6 +40,13 @@
 
 	ec_sleep_default: ec-sleep-default-state {
 		pins = "gpio176";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+
+	ec_int_default: ec-int-default-state {
+		pins = "gpio103";
 		function = "gpio";
 		drive-strength = <2>;
 		bias-disable;
@@ -62,7 +70,13 @@
 		reg = <0x28>;
 		/* <&tlmm 176 GPIO_ACTIVE_LOW>: asserted (low) = SoC asleep */
 		sleep-gpios = <&tlmm 176 1>;
+		/*
+		 * <&tlmm 103 IRQ_TYPE_EDGE_FALLING>: EC event interrupt, pulsed
+		 * low every ~100 ms while events are queued (ACPI GpioInt 0x300,
+		 * located by watching edges while pressing F4).
+		 */
+		interrupts-extended = <&tlmm 103 2>;
 		pinctrl-names = "default";
-		pinctrl-0 = <&ec_sleep_default>;
+		pinctrl-0 = <&ec_sleep_default>, <&ec_int_default>;
 	};
 };

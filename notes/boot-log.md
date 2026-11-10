@@ -121,3 +121,10 @@ because the UCM internal `Mic` device has no hardware capture switch (PipeWire
 mutes in software). F4 doesn't mute either; keyboard reports KEY_F20, not
 KEY_MICMUTE. Separate follow-up. The pciehp `pci_disable_device` WARNING at boot
 (modem link drop) is the known one, unrelated.
+
+### EC hotkeys (2026-11-10 18:45)
+Driver 0013 amended with EC event IRQ (GPIO 103, falling edge) + keymap. EL2:
+input device "ThinkPad X13s Extra Buttons" (event8, handlers rfkill kbd), IRQ
+`msmgpio 103 Edge 22-0028` firing, no EC errors. F4 -> `KEY_MICMUTE`
+press/release per tap (libinput), desktop mutes the mic. Other mapped keys
+(F7, F8, F10-F12, Fn+4) untested. Mic-mute LED still not synced (software mute).

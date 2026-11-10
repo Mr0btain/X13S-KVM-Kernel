@@ -1,4 +1,4 @@
-From 9fdea48a620a029d2ff7e267ee1f788c2bbe0c01 Mon Sep 17 00:00:00 2001
+From a20f16fd388dccd57ffb9544bd4af24951c78d1e Mon Sep 17 00:00:00 2001
 From: Mr0btain <108532146+Mr0btain@users.noreply.github.com>
 Date: Tue, 10 Nov 2026 18:10:36 -0500
 Subject: [PATCH] platform: arm64: add Lenovo ThinkPad X13s EC driver
@@ -15,22 +15,28 @@ suspend/resume: the power button LED and the lid logo dot then breathe while
 suspended. On resume also restore the keyboard backlight level the EC
 saved (0x15[2:1] -> 0xc0[5:4], DSDT SCMS 0x21).
 
+Hotkeys the keyboard itself doesn't report (F4 mic mute, ...) are EC
+events. The EC pulses its interrupt line (GPIO 103) low about every 100 ms
+while events are queued; each "f0 00 00 01" read pops one code. Report
+them through a sparse keymap built from the DSDT _Qxx -> ThinkPad hotkey
+mapping, and drop stale events at probe and resume.
+
 Also expose the mic-mute LED (0xc0 bit 0) as platform::micmute with the
 audio-micmute trigger.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ---
- drivers/platform/arm64/Kconfig                |  17 ++
+ drivers/platform/arm64/Kconfig                |  20 +
  drivers/platform/arm64/Makefile               |   1 +
- drivers/platform/arm64/lenovo-thinkpad-x13s.c | 259 ++++++++++++++++++
- 3 files changed, 277 insertions(+)
+ drivers/platform/arm64/lenovo-thinkpad-x13s.c | 415 ++++++++++++++++++
+ 3 files changed, 436 insertions(+)
  create mode 100644 drivers/platform/arm64/lenovo-thinkpad-x13s.c
 
 diff --git a/drivers/platform/arm64/Kconfig b/drivers/platform/arm64/Kconfig
-index e32e01b2a..f492c8676 100644
+index e32e01b2a..d689ba9aa 100644
 --- a/drivers/platform/arm64/Kconfig
 +++ b/drivers/platform/arm64/Kconfig
-@@ -90,6 +90,23 @@ config EC_LENOVO_THINKPAD_T14S
+@@ -90,6 +90,26 @@ config EC_LENOVO_THINKPAD_T14S
  
  	  Say M or Y here to include this support.
  
@@ -39,6 +45,8 @@ index e32e01b2a..f492c8676 100644
 +	depends on ARCH_QCOM || COMPILE_TEST
 +	depends on I2C
 +	depends on GPIOLIB
++	depends on INPUT
++	select INPUT_SPARSEKMAP
 +	select LEDS_CLASS
 +	select NEW_LEDS
 +	select REGMAP
@@ -47,7 +55,8 @@ index e32e01b2a..f492c8676 100644
 +	  Driver for the Embedded Controller in the Qualcomm Snapdragon-based
 +	  Lenovo ThinkPad X13s. It sends the EC the Modern Standby
 +	  notifications Windows sends, so the power button LED and lid logo
-+	  dot breathe while suspended, and provides the mic-mute LED.
++	  dot breathe while suspended, reports the EC hotkeys (F4 mic mute
++	  and others) and provides the mic-mute LED.
 +
 +	  Say M or Y here to include this support.
 +
@@ -66,10 +75,10 @@ index 7681be4a4..23ed6eef7 100644
  obj-$(CONFIG_EC_QCOM_HAMOA) += qcom-hamoa-ec.o
 diff --git a/drivers/platform/arm64/lenovo-thinkpad-x13s.c b/drivers/platform/arm64/lenovo-thinkpad-x13s.c
 new file mode 100644
-index 000000000..127a2d3bf
+index 000000000..b951ebb09
 --- /dev/null
 +++ b/drivers/platform/arm64/lenovo-thinkpad-x13s.c
-@@ -0,0 +1,259 @@
+@@ -0,0 +1,415 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Lenovo ThinkPad X13s (SC8280XP) Embedded Controller
@@ -86,6 +95,11 @@ index 000000000..127a2d3bf
 + *  - On display on the DSDT restores the keyboard backlight level that the EC
 + *    saved in 0x15[2:1] into 0xc0[5:4] (SCMS 0x21).
 + *  - The mic-mute LED is 0xc0 bit 0 (HKEY.MMTS).
++ *  - Hotkeys the keyboard doesn't report itself (F4 mic mute, ...) are EC
++ *    events: the EC pulses its interrupt GPIO low roughly every 100 ms while
++ *    its queue is non-empty, and each "f0 00 00 01" read pops one event code
++ *    (0x00 = empty). The codes and their ThinkPad hotkey meaning come from the
++ *    DSDT EC query methods (\_SB.I2C9._Qxx -> HKEY.MHKQ).
 + */
 +
 +#include <linux/bits.h>
@@ -95,6 +109,9 @@ index 000000000..127a2d3bf
 +#include <linux/err.h>
 +#include <linux/gpio/consumer.h>
 +#include <linux/i2c.h>
++#include <linux/input.h>
++#include <linux/input/sparse-keymap.h>
++#include <linux/interrupt.h>
 +#include <linux/leds.h>
 +#include <linux/module.h>
 +#include <linux/pm.h>
@@ -102,7 +119,21 @@ index 000000000..127a2d3bf
 +
 +#define X13S_EC_CMD_ECRD		0x02
 +#define X13S_EC_CMD_ECWR		0x03
++#define X13S_EC_CMD_EVT			0xf0
 +#define X13S_EC_WRITE_TRIES		2
++#define X13S_EC_EVT_MAX_DRAIN		64
++
++/* EC event codes (DSDT _Qxx) and the ThinkPad hotkey each one raises */
++#define X13S_EC_EVT_NONE		0x00
++#define X13S_EC_EVT_FN_4		0x13	/* 0x1004 sleep */
++#define X13S_EC_EVT_DISPLAY		0x19	/* 0x1007 display switch */
++#define X13S_EC_EVT_KBD_LIGHT		0x1f	/* 0x1012 kbd backlight changed */
++#define X13S_EC_EVT_MIC_MUTE		0x28	/* 0x101b mic mute (F4) */
++#define X13S_EC_EVT_WLAN		0x2a	/* 0x1005 radio */
++#define X13S_EC_EVT_CLIPPING_TOOL	0x62	/* 0x1312 */
++#define X13S_EC_EVT_PICKUP_PHONE	0x6c	/* 0x1318 */
++#define X13S_EC_EVT_HANGUP_PHONE	0x6d	/* 0x1319 */
++#define X13S_EC_EVT_STAR		0x6e	/* 0x1311 favorites */
 +
 +#define X13S_EC_REG_KBD_BL_SAVE		0x15
 +#define X13S_EC_KBD_BL_SAVE_MASK	GENMASK(2, 1)
@@ -122,6 +153,21 @@ index 000000000..127a2d3bf
 +	struct regmap *regmap;
 +	struct gpio_desc *sleep_gpio;
 +	struct led_classdev led_mic_mute;
++	struct input_dev *inputdev;
++	int irq;
++};
++
++static const struct key_entry x13s_keymap[] = {
++	{ KE_KEY, X13S_EC_EVT_FN_4, { KEY_SLEEP } },
++	{ KE_KEY, X13S_EC_EVT_DISPLAY, { KEY_SWITCHVIDEOMODE } },
++	{ KE_KEY, X13S_EC_EVT_KBD_LIGHT, { KEY_KBDILLUMTOGGLE } },
++	{ KE_KEY, X13S_EC_EVT_MIC_MUTE, { KEY_MICMUTE } },
++	{ KE_KEY, X13S_EC_EVT_WLAN, { KEY_WLAN } },
++	{ KE_KEY, X13S_EC_EVT_CLIPPING_TOOL, { KEY_SELECTIVE_SCREENSHOT } },
++	{ KE_KEY, X13S_EC_EVT_PICKUP_PHONE, { KEY_PICKUP_PHONE } },
++	{ KE_KEY, X13S_EC_EVT_HANGUP_PHONE, { KEY_HANGUP_PHONE } },
++	{ KE_KEY, X13S_EC_EVT_STAR, { KEY_BOOKMARKS } },
++	{ KE_END }
 +};
 +
 +static const struct regmap_config x13s_ec_regmap_config = {
@@ -194,6 +240,100 @@ index 000000000..127a2d3bf
 +	.reg_read = x13s_ec_read,
 +};
 +
++/* Pop one event code from the EC queue (DSDT QEVT). */
++static int x13s_ec_read_evt(struct x13s_ec *ec, u8 *evt)
++{
++	struct i2c_client *client = to_i2c_client(ec->dev);
++	u8 buf[4] = { X13S_EC_CMD_EVT, 0x00, 0x00, 0x01 };
++	struct i2c_msg request = {
++		.addr = client->addr,
++		.flags = I2C_M_STOP,
++		.len = sizeof(buf),
++		.buf = buf,
++	};
++	struct i2c_msg response = {
++		.addr = client->addr,
++		.flags = I2C_M_RD,
++		.len = 1,
++		.buf = evt,
++	};
++	int ret;
++
++	i2c_lock_bus(client->adapter, I2C_LOCK_SEGMENT);
++
++	ret = __i2c_transfer(client->adapter, &request, 1);
++	if (ret >= 0)
++		ret = __i2c_transfer(client->adapter, &response, 1);
++
++	i2c_unlock_bus(client->adapter, I2C_LOCK_SEGMENT);
++	fsleep(10000);
++
++	return ret < 0 ? ret : 0;
++}
++
++/*
++ * Read events until the queue is empty. With report == false they are
++ * discarded (stale events queued while nobody listened, e.g. lid and thermal
++ * events from before boot or during suspend).
++ */
++static void x13s_ec_drain_events(struct x13s_ec *ec, bool report)
++{
++	u8 evt;
++	int i;
++
++	for (i = 0; i < X13S_EC_EVT_MAX_DRAIN; i++) {
++		if (x13s_ec_read_evt(ec, &evt)) {
++			dev_warn_ratelimited(ec->dev, "failed to read EC event\n");
++			return;
++		}
++
++		if (evt == X13S_EC_EVT_NONE)
++			return;
++
++		if (!report)
++			continue;
++
++		if (!sparse_keymap_report_event(ec->inputdev, evt, 1, true))
++			dev_dbg(ec->dev, "unhandled EC event 0x%02x\n", evt);
++	}
++}
++
++static irqreturn_t x13s_ec_irq_handler(int irq, void *data)
++{
++	struct x13s_ec *ec = data;
++
++	x13s_ec_drain_events(ec, true);
++
++	return IRQ_HANDLED;
++}
++
++static int x13s_ec_input_probe(struct x13s_ec *ec)
++{
++	struct input_dev *idev;
++	int ret;
++
++	idev = devm_input_allocate_device(ec->dev);
++	if (!idev)
++		return -ENOMEM;
++
++	idev->name = "ThinkPad X13s Extra Buttons";
++	idev->phys = "thinkpad-x13s/input0";
++	idev->id.bustype = BUS_HOST;
++	idev->dev.parent = ec->dev;
++
++	ret = sparse_keymap_setup(idev, x13s_keymap, NULL);
++	if (ret)
++		return ret;
++
++	ret = input_register_device(idev);
++	if (ret)
++		return ret;
++
++	ec->inputdev = idev;
++
++	return 0;
++}
++
 +static enum led_brightness x13s_mic_mute_led_get(struct led_classdev *led_cdev)
 +{
 +	struct x13s_ec *ec = container_of(led_cdev, struct x13s_ec, led_mic_mute);
@@ -255,6 +395,22 @@ index 000000000..127a2d3bf
 +	if (ret)
 +		return ret;
 +
++	ret = x13s_ec_input_probe(ec);
++	if (ret)
++		return ret;
++
++	/* Optional: without an interrupt only the standby/LED parts work. */
++	ec->irq = client->irq;
++	if (ec->irq > 0) {
++		x13s_ec_drain_events(ec, false);
++
++		ret = devm_request_threaded_irq(dev, ec->irq, NULL,
++						x13s_ec_irq_handler,
++						IRQF_ONESHOT, dev_name(dev), ec);
++		if (ret)
++			return dev_err_probe(dev, ret, "Failed to request IRQ\n");
++	}
++
 +	return 0;
 +}
 +
@@ -270,6 +426,9 @@ index 000000000..127a2d3bf
 +static int x13s_ec_suspend(struct device *dev)
 +{
 +	struct x13s_ec *ec = dev_get_drvdata(dev);
++
++	if (ec->irq > 0)
++		disable_irq(ec->irq);
 +
 +	/* Same order as the Windows Modern Standby path (PEP0 _DSM 3, 5). */
 +	x13s_ec_standby(ec, X13S_EC_STANDBY_DISPLAY_OFF);
@@ -296,6 +455,12 @@ index 000000000..127a2d3bf
 +				   X13S_EC_KBD_BL_MASK,
 +				   FIELD_PREP(X13S_EC_KBD_BL_MASK,
 +					      FIELD_GET(X13S_EC_KBD_BL_SAVE_MASK, val)));
++
++	if (ec->irq > 0) {
++		/* Drop lid/thermal events queued while asleep. */
++		x13s_ec_drain_events(ec, false);
++		enable_irq(ec->irq);
++	}
 +
 +	return 0;
 +}

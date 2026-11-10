@@ -68,6 +68,37 @@ the keyboard backlight level on resume (0x15[2:1] -> 0xc0[5:4], DSDT
 `dts/x13s-el2-dsp.dtso`, `sleep-gpios = <&tlmm 176 GPIO_ACTIVE_LOW>`.
 The 0xe0/0x0c T14s registers and the WMI/`SMI` mailboxes are unrelated to this.
 
+## Hotkey events (found 2026-11-10)
+- Interrupt: **TLMM GPIO 103**, falling edge (ACPI `GIO0` `_AEI` pin 0x300 ->
+  `\_SB.I2C9.QEXC`). Found with `gpiomon` while pressing F4: the EC pulses the
+  line low (~1 ms) about every 100 ms while its queue is non-empty, nothing
+  when empty (measured: 0 edges idle, 54 in 6 s with one unread event, 0 after
+  reading it). GPIO 132 is noise.
+- Read one event: write `f0 00 00 01`, STOP, read 1 byte (DSDT `QEVT`); 0x00 =
+  queue empty. Nothing drains it without the driver, so it fills with lid
+  (0x52/0x53), thermal (0x50/0x51) and 0x3c events.
+- Codes (DSDT `_Qxx` -> `HKEY.MHKQ` -> thinkpad_acpi Lenovo keymap):
+
+| EC | hkey | Linux | key |
+|---|---|---|---|
+| 0x13 | 0x1004 | KEY_SLEEP | Fn+4 (also `Notify(SLPB)`) |
+| 0x19 | 0x1007 | KEY_SWITCHVIDEOMODE | F7 |
+| 0x1f | 0x1012 | KEY_KBDILLUMTOGGLE | Fn+Space (EC changes the level itself) |
+| 0x28 | 0x101b | KEY_MICMUTE | **F4, verified** |
+| 0x2a | 0x1005 | KEY_WLAN | F8? |
+| 0x62 | 0x1312 | KEY_SELECTIVE_SCREENSHOT | |
+| 0x6c / 0x6d | 0x1318 / 0x1319 | KEY_PICKUP_PHONE / KEY_HANGUP_PHONE | F10/F11? |
+| 0x6e | 0x1311 | KEY_BOOKMARKS | F12 (star)? |
+| 0x88 | 0x131b | camera shutter toggle | not mapped |
+| 0x50/0x51, 0x70/0x72/0x73, 0x75, 0x77 | 0x6040, 0x6005, 0x6060, 0x60c0 | thermal / power events | not mapped |
+| 0x52 / 0x53 | 0x5002 / 0x5001 | lid open / close | not mapped (gpio-keys has the lid) |
+| 0x3c, 0x36, 0x81 | - / TZ notify / 0x1014 | | not mapped |
+
+Mic-mute LED: `platform::micmute` works when written directly, but the
+`audio-micmute` trigger has nothing to follow: UCM's internal `Mic` device has
+no hardware capture switch, so PipeWire mutes in software. Needs a userspace
+sync (watch the default source mute, write the LED).
+
 ## Dumps (charger unplugged, then plugged; 7.3.1-el2, EL2)
 ```
 # unplugged
