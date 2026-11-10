@@ -1,0 +1,41 @@
+#!/bin/sh
+# Mirror the PipeWire default microphone's mute state onto the X13s F4
+# (mic-mute) LED, platform::micmute from the lenovo-thinkpad-x13s EC driver.
+#
+# The kernel's audio-micmute trigger can't do this on the X13s: the internal
+# mic has no hardware capture switch, so PipeWire mutes it in software and no
+# ALSA control ever changes (see notes/x13s-ec.md). Runs as a systemd user
+# service; installed by scripts/install-micmute-led.sh.
+LED=${X13S_MICMUTE_LED:-/sys/class/leds/platform::micmute/brightness}
+
+if [ ! -w "$LED" ]; then
+	echo "x13s-micmute-led: $LED missing or not writable, nothing to do" >&2
+	exit 0
+fi
+
+last=
+
+sync_led() {
+	case "$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@ 2>/dev/null)" in
+	*MUTED*) v=1 ;;
+	*) v=0 ;;
+	esac
+	if [ "$v" != "$last" ]; then
+		echo "$v" > "$LED" && last=$v
+	fi
+}
+
+sync_led
+
+# pw-dump -m prints JSON for every changed object. Re-check on anything that
+# can change the answer: a mute property, or the default source switching
+# (e.g. a headset plugged in).
+pw-dump -m -N | while IFS= read -r line; do
+	case $line in
+	*'"mute"'* | *default.audio.source* | *default.configured.audio.source*)
+		sync_led ;;
+	esac
+done
+
+# pw-dump exits when PipeWire goes away; let systemd restart us.
+exit 1

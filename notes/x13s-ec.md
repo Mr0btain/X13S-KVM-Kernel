@@ -85,10 +85,10 @@ The 0xe0/0x0c T14s registers and the WMI/`SMI` mailboxes are unrelated to this.
 | 0x19 | 0x1007 | KEY_SWITCHVIDEOMODE | F7 |
 | 0x1f | 0x1012 | KEY_KBDILLUMTOGGLE | Fn+Space (EC changes the level itself) |
 | 0x28 | 0x101b | KEY_MICMUTE | **F4, verified** |
-| 0x2a | 0x1005 | KEY_WLAN | F8? |
+| 0x2a | 0x1005 | KEY_WLAN | F8, verified |
 | 0x62 | 0x1312 | KEY_SELECTIVE_SCREENSHOT | |
-| 0x6c / 0x6d | 0x1318 / 0x1319 | KEY_PICKUP_PHONE / KEY_HANGUP_PHONE | F10/F11? |
-| 0x6e | 0x1311 | KEY_BOOKMARKS | F12 (star)? |
+| 0x6c / 0x6d | 0x1318 / 0x1319 | KEY_PICKUP_PHONE / KEY_HANGUP_PHONE | F10/F11, verified |
+| 0x6e | 0x1311 | KEY_BOOKMARKS | F12 (star), verified |
 | 0x88 | 0x131b | camera shutter toggle | not mapped |
 | 0x50/0x51, 0x70/0x72/0x73, 0x75, 0x77 | 0x6040, 0x6005, 0x6060, 0x60c0 | thermal / power events | not mapped |
 | 0x52 / 0x53 | 0x5002 / 0x5001 | lid open / close | not mapped (gpio-keys has the lid) |
@@ -96,8 +96,11 @@ The 0xe0/0x0c T14s registers and the WMI/`SMI` mailboxes are unrelated to this.
 
 Mic-mute LED: `platform::micmute` works when written directly, but the
 `audio-micmute` trigger has nothing to follow: UCM's internal `Mic` device has
-no hardware capture switch, so PipeWire mutes in software. Needs a userspace
-sync (watch the default source mute, write the LED).
+no hardware capture switch, so PipeWire mutes in software. Solved in userspace
+by `scripts/install-micmute-led.sh` / `scripts/x13s-micmute-led`.
+
+Tested F-row: F4, F8, F10, F11 as mapped; F12 sends KEY_BOOKMARKS. F9 (camera)
+sends nothing to the OS (no EC IRQ, no input event).
 
 ## Dumps (charger unplugged, then plugged; 7.3.1-el2, EL2)
 ```

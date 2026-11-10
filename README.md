@@ -60,6 +60,7 @@ put it at `out/el2/tcblaunch.exe`. Then run:
 sudo scripts/el2-install.sh     # slbounce + UEFI shell + "Ubuntu (EL2 KVM)" boot entry
 sudo scripts/install-esp.sh     # qebspil + DSP firmware on the ESP
 sudo scripts/install-kernel.sh  # kernel debs, DSP dtb, EL2 GRUB menu
+sudo scripts/install-micmute-led.sh  # optional: F4 LED follows mic mute (EL2, EC driver)
 ```
 
 Reboot, press **F12**, choose **Ubuntu (EL2 KVM)**, then
@@ -75,7 +76,7 @@ ls /dev/kvm; upower -d | grep percentage
 ```
 
 Undo: `sudo scripts/install-kernel.sh --remove`, `sudo scripts/install-esp.sh --remove`,
-`sudo scripts/el2-install.sh --remove`.
+`sudo scripts/el2-install.sh --remove`, `sudo scripts/install-micmute-led.sh --remove`.
 
 ## Build from source
 
@@ -140,6 +141,8 @@ scripts/
   el2-install.sh     slbounce boot path (ESP + firmware boot entry)
   install-esp.sh     qebspil + DSP firmware on the ESP
   install-kernel.sh  kernel debs + DSP dtb + EL2 GRUB menu hook
+  install-micmute-led.sh  F4 mic-mute LED sync (udev rule + user service)
+  x13s-micmute-led   the LED sync daemon (PipeWire mute -> platform::micmute)
   el2-grubcfg.sh     generates /boot/grub/el2.cfg (kernel postinst hook)
   suspend-test.sh    bisect suspend problems (pm_test levels)
   el2/               startup.nsh (UEFI shell), grubel2 embed config

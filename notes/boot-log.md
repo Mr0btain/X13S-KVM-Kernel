@@ -128,3 +128,13 @@ input device "ThinkPad X13s Extra Buttons" (event8, handlers rfkill kbd), IRQ
 `msmgpio 103 Edge 22-0028` firing, no EC errors. F4 -> `KEY_MICMUTE`
 press/release per tap (libinput), desktop mutes the mic. Other mapped keys
 (F7, F8, F10-F12, Fn+4) untested. Mic-mute LED still not synced (software mute).
+F-row at EL2 with the EC driver: F4 mic mute OK, F8 airplane (KEY_WLAN) OK,
+F10/F11 pickup/hangup phone OK, F12 star sends KEY_BOOKMARKS (no default
+desktop action). F9 (camera): no EC interrupt, no input event on any device;
+nothing reaches the OS. EC event 0x3c shows up occasionally, unmapped
+(empty `_Q3C` in the DSDT).
+
+### Mic-mute LED sync (2026-11-10 18:50)
+`scripts/install-micmute-led.sh`: udev rule (trigger none, brightness 0666) +
+user service `x13s-micmute-led` (pw-dump monitor -> wpctl mute -> LED).
+F4 LED now follows the mic mute.
