@@ -138,3 +138,17 @@ nothing reaches the OS. EC event 0x3c shows up occasionally, unmapped
 `scripts/install-micmute-led.sh`: udev rule (trigger none, brightness 0666) +
 user service `x13s-micmute-led` (pw-dump monitor -> wpctl mute -> LED).
 F4 LED now follows the mic mute.
+
+### ADSP missed at probe after cold boot -> battery 0% (2026-11-11 10:05)
+First cold boot since 2026-11-10 (poweroff 09:40) and the reboot after it:
+7.3.1-el2 at EL2, slpi/cdsp `attached`, **no adsp** (`remoteproc1` missing):
+`3000000.remoteproc: no PAS/SCM and remoteproc not running during boot, exiting`.
+No pmic_glink battery manager -> `qcom-battmgr-*` empty, upower `percentage nan`
+(shows 0%). Nothing changed on the ESP/dtb/firmware since the last good boot.
+`/proc/interrupts`: `smp2p-adsp 1 q6v5 ready` = 1, i.e. qebspil did start the
+ADSP and it signalled ready *after* the single SMP2P check at probe. Race, not a
+dead DSP. Also: that early exit returned 0 with everything torn down, so the
+device stayed bound and unbind/rebind would have hit remove() on a never-added
+rproc (no safe in-place recovery).
+Fix: patches/linux/0014 polls SMP2P up to `qcom_q6v5_pas.attach_wait_ms`
+(default 10 s) and returns -ENODEV if it still gives up. Not yet built/tested.

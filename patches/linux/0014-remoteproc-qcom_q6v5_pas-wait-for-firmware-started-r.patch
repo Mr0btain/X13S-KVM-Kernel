@@ -1,0 +1,79 @@
+From 7da3d095718f0b12d3e8d7e3562cd7fb875bdb97 Mon Sep 17 00:00:00 2001
+From: Mr0btain <108532146+Mr0btain@users.noreply.github.com>
+Date: Wed, 11 Nov 2026 10:08:08 -0500
+Subject: [PATCH] remoteproc: qcom_q6v5_pas: wait for firmware-started
+ remoteproc at probe
+
+In the attach-only path (broken reset, no PAS at EL2) the SMP2P state is
+read once at probe. After a cold boot the ADSP started by qebspil can still
+be initialising at that point: ready/handover are not set yet, the driver
+logs "no PAS/SCM and remoteproc not running during boot, exiting" and never
+looks again, even though the ADSP signals ready a moment later. pmic_glink
+then has no battery manager and the battery reads 0%.
+
+Poll the SMP2P state every 100 ms for up to attach_wait_ms (default 10 s)
+before giving up. The handover IRQ stays disabled until attach and the
+fatal handler ignores interrupts while !running, so polling is safe.
+
+If it still gives up, return -ENODEV instead of 0. The error path has
+already torn everything down, so leaving the device bound meant remove()
+(on unbind) would rproc_del() an rproc that was never added and deinit
+twice. Unbound, a later manual bind is a safe retry.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ drivers/remoteproc/qcom_q6v5_pas.c | 28 +++++++++++++++++++++++++++-
+ 1 file changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/remoteproc/qcom_q6v5_pas.c b/drivers/remoteproc/qcom_q6v5_pas.c
+index 813fa78b1..daa92cc2c 100644
+--- a/drivers/remoteproc/qcom_q6v5_pas.c
++++ b/drivers/remoteproc/qcom_q6v5_pas.c
+@@ -39,6 +39,17 @@
+ 
+ #define MAX_ASSIGN_COUNT 3
+ 
++/*
++ * When the remoteproc was started by the boot firmware (e.g. qebspil) and
++ * we can only attach, it may not have signalled ready/handover yet by the
++ * time we probe (seen with the ADSP on SC8280XP after a cold boot). Poll the
++ * SMP2P state for a while before giving up on it.
++ */
++static unsigned int attach_wait_ms = 10000;
++module_param(attach_wait_ms, uint, 0644);
++MODULE_PARM_DESC(attach_wait_ms,
++		 "Max time to wait for a firmware-started remoteproc to become ready (ms)");
++
+ /*
+  * Platforms whose TrustZone firmware supports the PAS path when the
+  * kernel runs at EL2. Older platforms (and current Windows laptop
+@@ -1011,10 +1022,25 @@ static int qcom_pas_probe(struct platform_device *pdev)
+ 		goto detach_proxy_pds;
+ 
+ 	if (broken_reset && !use_pas) {
++		unsigned long start = jiffies;
++		unsigned long deadline = start + msecs_to_jiffies(attach_wait_ms);
++		bool waited = false;
++
+ 		qcom_q6v5_read_smp2p_state(&pas->q6v5);
++		while (rproc->state == RPROC_OFFLINE && !ops->start &&
++		       time_before(jiffies, deadline)) {
++			msleep(100);
++			waited = true;
++			qcom_q6v5_read_smp2p_state(&pas->q6v5);
++		}
++		if (rproc->state == RPROC_DETACHED && waited)
++			dev_info(&pdev->dev, "remoteproc became ready after %u ms\n",
++				 jiffies_to_msecs(jiffies - start));
++
+ 		if (rproc->state == RPROC_OFFLINE && !ops->start) {
+ 			dev_err(&pdev->dev, "no PAS/SCM and remoteproc not running during boot, exiting\n");
+-			ret = 0;
++			/* Stay unbound: everything is torn down below, remove() must not run. */
++			ret = -ENODEV;
+ 			goto deinit_q6v5;
+ 		}
+ 	}
+-- 
+2.53.0
+
