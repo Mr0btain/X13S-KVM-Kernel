@@ -10,7 +10,7 @@
 | 3 Build `-el2` kernel | done: `out/linux-image-7.3.1-el2_7.3.1-1el2_arm64.deb` (+ headers); ~65 min full build |
 | 4 Boot integration | **done 2026-11-06**: EL2 entry boots 7.3.1-el2, DSPs attached |
 | 5 Test checklist | **daily-usable at EL2**: KVM, DSPs, battery/charging, audio, Wi-Fi/BT, suspend. Open: 2nd USB-C PHY (intermittent), suspend drain. See `notes/boot-log.md` |
-| 6 Leftovers (venus, EFI vars) | **iris HW decode works at EL2 (2026-11-13)**: patch 0015 + overlay `video-firmware`, bit-exact H.264 decode. EFI vars: next experiment noted. Side experiment B: not started |
+| 6 Leftovers (venus, EFI vars) | **iris HW decode works at EL2 (2026-11-13)**: patch 0015 + overlay `video-firmware`, bit-exact H.264 decode. EFI vars: known limitation (SHM-bridge theory ruled out). Side experiment B: not started |
 | 7 CI + releases | `.github/workflows/build.yml` + `scripts/ci-build.sh`; sources pinned in `sources.env`, config in `config/` (see README) |
 
 Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
@@ -286,11 +286,13 @@ Build gotchas (2026-11-06):
   *version* call works at EL2 (`0x1402000`); the failing call is the
   uefisecapp **app lookup**, the first one that hands TZ a buffer
   (`qcom_tzmem`, which is in SHM-bridge mode: `QCOM_TZMEM_MODE_SHMBRIDGE=y`,
-  bridge enable succeeded). Next experiment: build with
-  `QCOM_TZMEM_MODE_GENERIC` (no SHM bridge) and see if the lookup passes
-  (`qcom_scm` is built in, so this needs a kernel build). If it doesn't,
-  uefisecapp is probably not reachable after Secure Launch: document "do EFI
-  changes from EL1".
+  bridge enable succeeded). **Tested 2026-11-13: `QCOM_TZMEM_MODE_GENERIC`
+  (no SHM bridge) changes nothing**, same `-22`, so the bridge isn't the
+  cause. Most likely uefisecapp isn't reachable after the Secure Launch
+  (slbounce/tcblaunch), which is outside what Linux can fix. Status: known
+  limitation, "do EFI changes from the normal (EL1) boot" (README already
+  says so). If revisited: boot with `dyndbg="file qcom_scm.c +p"` to log the
+  raw TZ result/resp_type of the lookup, and ask on the slbounce tracker.
 - **Side experiment B:** add `iommus` (DSP stream IDs, from ACPI IORT dump
   `acpidump`/Windows DSDT or the downstream dts) to the remoteproc nodes and
   see if TZ accepts the Linux-managed PAS path. If it does, qebspil isn't needed.

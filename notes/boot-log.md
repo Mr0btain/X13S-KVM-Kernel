@@ -176,3 +176,12 @@ EL2, DSPs attached as usual.
   registered after a registry refresh (`rm ~/.cache/gstreamer-1.0/registry*`)
   but untested: `h264parse` needs `gstreamer1.0-plugins-bad`.
 - Open: encoder, browser/player use, suspend with an active session.
+
+### EFI variables: tzmem generic mode (2026-11-13 06:35)
+7.3.1-el2 built with `CONFIG_QCOM_TZMEM_MODE_GENERIC=y` (no SHM bridge) to see
+whether the SHM bridge is why TZ rejects the uefisecapp lookup at EL2. EL2,
+DSPs attached, battery OK (60%, charging), iris decoder up (/dev/video0 this
+boot). **No change:** `qseecom: found qseecom with version 0x1402000`, then
+`qseecom: scm call failed with error -22`, `qcom_qseecom probe ... -22`;
+`/sys/firmware/efi/efivars` empty, `efibootmgr`: "EFI variables are not
+supported on this system". Config reverted to SHMBRIDGE (Ubuntu's choice).
