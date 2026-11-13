@@ -30,8 +30,9 @@ s2idle suspend/resume, GPU/display, Lid LED breathe, mic F4
 
 Known issues:
 
-- No hardware video decode: iris firmware load fails (`-22`). The fix is
-  still to do.
+- Hardware video decode (iris) at EL2 is new (patch 0015 + the overlay's
+  `video-firmware` node): H.264 decode is verified with `v4l2-ctl`/GStreamer
+  `v4l2h264dec`; ffmpeg's `h264_v4l2m2m` doesn't work with it. Encoder untested.
 - No EFI variable access at EL2 (`qseecom -22`). Run `efibootmgr` / these
   install scripts from the normal boot.
 - No cluster power collapse at EL2, so idle and suspend drain is somewhat
@@ -128,6 +129,8 @@ branch `jg/rproc_nohyp_attach` (authors: Stephan Gerhold, Jens Glathe):
 | 0007–0011 | qcom_q6v5_pas: attach-only path at EL2 when the platform's TZ can't do PAS there (gated by `qcom,broken-reset`) |
 | 0012 | kbuild: fix a parallel `dtbs_install` race in `bindeb-pkg` |
 | 0013 | new `lenovo-thinkpad-x13s` EC driver: Modern Standby notifications (power LED and lid dot breathe in suspend, as on Windows) and the mic-mute LED; see `notes/x13s-ec.md` |
+| 0014 | qcom_q6v5_pas: wait (`attach_wait_ms`, default 10 s) for a DSP that qebspil started but that hasn't signalled ready yet, instead of giving up at probe (ADSP missing -> battery 0%) |
+| 0015 | iris: load the video firmware without TZ/PAS when the codec has a `video-firmware` subnode (Stephan Gerhold, from X1E work; verified on the X13s at EL2) |
 
 ## Repo layout
 

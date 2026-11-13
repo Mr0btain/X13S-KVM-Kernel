@@ -10,7 +10,7 @@
 | 3 Build `-el2` kernel | done: `out/linux-image-7.3.1-el2_7.3.1-1el2_arm64.deb` (+ headers); ~65 min full build |
 | 4 Boot integration | **done 2026-11-06**: EL2 entry boots 7.3.1-el2, DSPs attached |
 | 5 Test checklist | **daily-usable at EL2**: KVM, DSPs, battery/charging, audio, Wi-Fi/BT, suspend. Open: 2nd USB-C PHY (intermittent), suspend drain. See `notes/boot-log.md` |
-| 6 Leftovers (venus, EFI vars) | optional |
+| 6 Leftovers (venus, EFI vars) | **iris HW decode works at EL2 (2026-11-13)**: patch 0015 + overlay `video-firmware`, bit-exact H.264 decode. EFI vars: next experiment noted. Side experiment B: not started |
 | 7 CI + releases | `.github/workflows/build.yml` + `scripts/ci-build.sh`; sources pinned in `sources.env`, config in `config/` (see README) |
 
 Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
@@ -259,16 +259,41 @@ Build gotchas (2026-11-06):
 
 ## Phase 6 (optional): Leftovers
 
-- **Venus (HW video decode):** venus has a non-TZ firmware-load path (the
-  `video-firmware` subnode with `iommus`). Check whether it works on
-  sc8280xp at EL2 with a DT change. Low priority: software decode works.
+- **Venus/Iris (HW video decode):** in 7.3 sc8280xp binds `qcom-iris`
+  (the venus sm8250 entry is compiled out when `VIDEO_QCOM_IRIS` is set), and
+  iris only had the TZ/PAS path: `error -22 initializing firmware
+  qcvss8280.mbn`. A DT change alone isn't enough.
+  - 2026-11-13: patch 0015 = Stephan Gerhold's "media: iris: Port firmware
+    loading without TZ/PAS from venus" (never posted to lore; the jglathe
+    branch has only its header hunks; full version taken from
+    aruhier/linux-slim7x-x1e 98b59b5b), plus a probe error-unwind fix. With
+    a `video-firmware` child node it does `qcom_mdt_load_no_init`, maps
+    `pil_video_mem` at IOVA 0 on the firmware's own SMMU stream and releases
+    `WRAPPER_TZ_XTSS_SW_RESET` itself (as venus does for IRIS2 Chromebooks).
+  - The firmware SID isn't published for sc8280xp (the upstream
+    `x1-el2.dtso` still has a TODO for X1E). Guess by analogy with sc7180
+    (main `0x0c00/0x60`, fw `0x0c42`): overlay uses `<&apps_smmu 0x2a02
+    0x400>` (matches 0x2a02 and 0x2e02). A wrong guess shows up as arm-smmu
+    `Blocked unknown Stream ID 0x...` (or a context fault) naming the real
+    SID.
+  - **Result 2026-11-13: works.** No SMMU faults (the guessed SID is right),
+    the XTSS reset write is fine from EL2, and a 1080p H.264 decode is bit-exact
+    vs software (boot-log). ffmpeg's `h264_v4l2m2m` wrapper doesn't work
+    with iris (userspace issue); `v4l2-ctl` and GStreamer `v4l2h264dec` are
+    the way to use it. Todo: encoder, suspend with an open session.
 - **EFI variables (qseecom/uefisecapp `-22`):** cosmetic for daily use but
-  `efibootmgr`/fwupd won't work at EL2. Look into whether newer kernels or
-  the X1E EL2 work solved it. Otherwise document "do EFI changes from EL1".
+  `efibootmgr`/fwupd won't work at EL2. Findings 2026-11-13: the qseecom
+  *version* call works at EL2 (`0x1402000`); the failing call is the
+  uefisecapp **app lookup**, the first one that hands TZ a buffer
+  (`qcom_tzmem`, which is in SHM-bridge mode: `QCOM_TZMEM_MODE_SHMBRIDGE=y`,
+  bridge enable succeeded). Next experiment: build with
+  `QCOM_TZMEM_MODE_GENERIC` (no SHM bridge) and see if the lookup passes
+  (`qcom_scm` is built in, so this needs a kernel build). If it doesn't,
+  uefisecapp is probably not reachable after Secure Launch: document "do EFI
+  changes from EL1".
 - **Side experiment B:** add `iommus` (DSP stream IDs, from ACPI IORT dump
   `acpidump`/Windows DSDT or the downstream dts) to the remoteproc nodes and
   see if TZ accepts the Linux-managed PAS path. If it does, qebspil isn't needed.
-- Send results upstream / to qebspil issue tracker (first SC8280XP report).
 
 ## Risks / open questions
 

@@ -21,6 +21,20 @@
 };
 
 /*
+ * Iris video codec (HW decode/encode). TZ can't PAS-boot it at EL2 (-22), so
+ * patches/linux/0015 loads the firmware itself when this subnode exists: it
+ * maps pil_video_mem at IOVA 0 for the firmware's own stream and releases the
+ * XTSS reset. The firmware SID is not documented for sc8280xp; by analogy
+ * with sc7180 (0x0c00/0x60 -> fw 0x0c42) it is 0x2a02, with mask 0x400 also
+ * matching 0x2e02. Verified 2026-11-13: no SMMU faults, bit-exact decode.
+ */
+&{/soc@0/video-codec@aa00000} {
+	video-firmware {
+		iommus = <&apps_smmu 0x2a02 0x400>;
+	};
+};
+
+/*
  * Embedded controller. The X13s DSDT puts the EC at 0x28 on \_SB.I2C9
  * (QUP1 SE0, 0xa80000 = i2c8), talking the same ECRD/ECWR protocol as the
  * ThinkPad T14s Gen6 EC. Driven by lenovo-thinkpad-x13s.c

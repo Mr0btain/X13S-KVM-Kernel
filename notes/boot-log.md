@@ -152,3 +152,27 @@ device stayed bound and unbind/rebind would have hit remove() on a never-added
 rproc (no safe in-place recovery).
 Fix: patches/linux/0014 polls SMP2P up to `qcom_q6v5_pas.attach_wait_ms`
 (default 10 s) and returns -ENODEV if it still gives up. Not yet built/tested.
+
+### Iris video codec without TZ (2026-11-13 06:20)
+7.3.1-el2 with patches/linux/0015 (iris non-TZ firmware load, Stephan Gerhold)
+and the overlay `video-firmware` node `<&apps_smmu 0x2a02 0x400>` (guessed SID,
+matches 0x2a02/0x2e02). Before: `qcom-iris aa00000.video-codec: error -22
+initializing firmware qcvss8280.mbn`. Installed with `install-kernel.sh`; the
+module was not blacklisted for the first boot (GRUB too fast) and booted fine.
+EL2, DSPs attached as usual.
+- `platform video-firmware.0: Adding to iommu group 36`; no `-22`, no arm-smmu
+  blocked-SID or context faults at any point. So the guessed SID is right
+  (which of 0x2a02/0x2e02 it is was not checked).
+- `Iris Decoder` /dev/video3 (H264, HEVC, VP90) and `Iris Encoder` /dev/video5
+  registered; opening the decoder boots the firmware with no error.
+- **HW decode works:** `v4l2-ctl -d /dev/video3 --set-fmt-video-out=pixelformat=H264
+  --set-fmt-video=pixelformat=NV12 --stream-mmap --stream-out-mmap
+  --stream-from=test.h264 --stream-to=out.nv12` on a 10 s 1080p30 libx264 High
+  clip: ~196 fps, 299/300 frames out (1920x1088 NV12), all 299 bit-exact vs
+  ffmpeg software decode (one frame missing near the end, consistent with a
+  v4l2-ctl streaming quirk, not corruption).
+- ffmpeg `h264_v4l2m2m` fails on it (`capture: driver decode error`, 2 frames):
+  an ffmpeg wrapper issue, no kernel messages. GStreamer `v4l2h264dec` is
+  registered after a registry refresh (`rm ~/.cache/gstreamer-1.0/registry*`)
+  but untested: `h264parse` needs `gstreamer1.0-plugins-bad`.
+- Open: encoder, browser/player use, suspend with an active session.
