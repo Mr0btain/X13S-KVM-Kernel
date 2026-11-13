@@ -10,7 +10,7 @@
 | 3 Build `-el2` kernel | done: `out/linux-image-7.3.1-el2_7.3.1-1el2_arm64.deb` (+ headers); ~65 min full build |
 | 4 Boot integration | **done 2026-11-06**: EL2 entry boots 7.3.1-el2, DSPs attached |
 | 5 Test checklist | **daily-usable at EL2**: KVM, DSPs, battery/charging, audio, Wi-Fi/BT, suspend. Open: 2nd USB-C PHY (intermittent), suspend drain. See `notes/boot-log.md` |
-| 6 Leftovers (venus, EFI vars) | **iris HW decode works at EL2 (2026-11-13)**: patch 0015 + overlay `video-firmware`, bit-exact H.264 decode. EFI vars: known limitation (SHM-bridge theory ruled out). Side experiment B: not started |
+| 6 Leftovers (venus, EFI vars) | **iris HW decode works at EL2 (2026-11-13)**: patch 0015 + overlay `video-firmware`, bit-exact H.264 decode. EFI vars: known limitation (SHM-bridge theory ruled out). Side experiment B: not viable (TZ rejects the resource-table call, -EIO). **Phase 6 done.** |
 | 7 CI + releases | `.github/workflows/build.yml` + `scripts/ci-build.sh`; sources pinned in `sources.env`, config in `config/` (see README) |
 
 Goal: a kernel and boot path where the "Ubuntu (EL2 KVM)" entry has **KVM and**
@@ -296,6 +296,16 @@ Build gotchas (2026-11-06):
 - **Side experiment B:** add `iommus` (DSP stream IDs, from ACPI IORT dump
   `acpidump`/Windows DSDT or the downstream dts) to the remoteproc nodes and
   see if TZ accepts the Linux-managed PAS path. If it does, qebspil isn't needed.
+  - Not DT-only after all: patch 0010 forces `use_pas=0` at EL2 unless the
+    machine is in `el2_pas_capable_compats`, so the test used a throwaway
+    per-node opt-in (`qcom,el2-pas-experiment`).
+  - **Result 2026-11-13 (CDSP, SID 0x3180): not viable.** TZ answers the
+    resource-table SCM call with `QCOM_SCM_ERROR` (-EIO); that call only exists
+    in newer TZ builds (Lemans/X1E), and init_image after it already fails with
+    -22 at EL2. qebspil stays required on the X13s. Details in boot-log.
+  - The derived DSP SIDs (rule: remoteproc SID = fastrpc cb base with low bits
+    cleared): ADSP `0x0c00`, CDSP `0x3180`. Unverified, kept in case a
+    future TZ supports the call.
 
 ## Risks / open questions
 

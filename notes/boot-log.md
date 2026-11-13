@@ -185,3 +185,20 @@ boot). **No change:** `qseecom: found qseecom with version 0x1402000`, then
 `qseecom: scm call failed with error -22`, `qcom_qseecom probe ... -22`;
 `/sys/firmware/efi/efivars` empty, `efibootmgr`: "EFI variables are not
 supported on this system". Config reverted to SHMBRIDGE (Ubuntu's choice).
+
+### Side experiment B: TZ PAS with Linux-managed IOMMU (2026-11-13 06:50)
+CDSP only (ADSP/SLPI stayed on qebspil). Kernel 7.3.1-el2 + a per-node opt-in
+(`qcom,el2-pas-experiment`, lifts patch 0010's EL2 PAS block for one node);
+overlay: CDSP without `qcom,broken-reset` (qebspil leaves it off), with
+`iommus = <&apps_smmu 0x3180 0x0>` (fastrpc cb base 0x318x/0x420, low bits
+cleared, same rule as X1E cdsp 0x0c01/0x20 -> 0x0c00). Booted fine at EL2.
+- `1b300000.remoteproc: ... in_el2=1 el2_pas_capable=1 use_pas=1 broken_reset=0`
+- `Booting fw image qcom/sc8280xp/LENOVO/21BX/qccdsp8280.mbn`, then
+  `Error in getting resource table: -5`; cdsp `offline`. No SMMU faults.
+- -5 = -EIO = generic `QCOM_SCM_ERROR`: TZ rejects the PAS resource-table call
+  (it exists only in newer TZ builds, Lemans/X1E). The next step,
+  init_image/auth_and_reset, is the same call that already fails with -22 at
+  EL2 without iommus.
+- slpi/adsp `attached`, battery 68% charging: unaffected.
+**Result: not viable on the X13s firmware; qebspil stays required.** Overlay
+restored (`qcom,broken-reset` on the CDSP), opt-in patch dropped.
