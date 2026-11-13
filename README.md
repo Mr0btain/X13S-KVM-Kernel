@@ -1,9 +1,10 @@
 # X13s EL2 kernel: KVM with battery, audio and suspend
 
 Boots the **Lenovo ThinkPad X13s** (Snapdragon 8cx Gen 3 / SC8280XP) Linux at
-**EL2**, so `/dev/kvm` works (e.g. for the Android Emulator with `-accel on`).
-The usual cost of doing that is avoided: battery, charging, USB-C, audio and
-suspend all keep working.
+**EL2**, so we could get KVM working. Started this to use the android emulator.
+There is another branch here for that specifically down below is a link to it.
+Got the everything else working along with the lid led breathing in suspend.
+the rest below is mostly AI generated with a few edits from me.
 
 Normally Qualcomm's hypervisor owns EL2. slbounce takes it over, but that also
 removes what boots the DSPs, and the battery/charger (ADSP via `pmic_glink`),
@@ -25,7 +26,7 @@ fallback.
 
 Works at EL2: KVM (VHE), all DSPs attached, battery % and charging on both
 USB-C ports, UCSI, speakers/headphones/mics, Wi-Fi, Bluetooth, the 5G modem,
-s2idle suspend/resume, GPU/display, the Android Emulator with `-accel on`.
+s2idle suspend/resume, GPU/display, Lid LED breathe, mic F4
 
 Known issues:
 
